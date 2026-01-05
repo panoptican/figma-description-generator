@@ -12,6 +12,7 @@ import {
   LoadComponentsHandler,
   LoadSettingsHandler,
   SaveSettingsHandler,
+  Scope,
   Settings,
   SettingsLoadedHandler,
   SettingsSavedHandler
@@ -21,6 +22,11 @@ import { Header } from './Header'
 import { SettingsModal } from './SettingsModal'
 import { ComponentList } from './ComponentList'
 
+interface AppProps {
+  scope: Scope
+  currentPageName: string
+}
+
 const DEFAULT_SETTINGS: Settings = {
   provider: 'chatgpt',
   apiKey: '',
@@ -29,7 +35,7 @@ const DEFAULT_SETTINGS: Settings = {
   includeImage: true
 }
 
-export function App() {
+export function App({ scope, currentPageName }: AppProps) {
   const [components, setComponents] = useState<ComponentData[]>([])
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [searchValue, setSearchValue] = useState('')
@@ -276,6 +282,8 @@ export function App() {
         progress={generateProgress}
         showVariants={showVariants}
         onShowVariantsChange={setShowVariants}
+        scope={scope}
+        currentPageName={currentPageName}
       />
 
       <ComponentList

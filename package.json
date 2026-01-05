@@ -22,7 +22,23 @@
     "editorType": ["figma"],
     "id": "description-generator",
     "name": "Description Generator",
-    "main": "src/main.ts",
-    "ui": "src/ui.tsx"
+    "menu": [
+      {
+        "name": "Current page",
+        "main": {
+          "src": "src/main.ts",
+          "handler": "currentPage"
+        },
+        "ui": "src/ui.tsx"
+      },
+      {
+        "name": "All pages",
+        "main": {
+          "src": "src/main.ts",
+          "handler": "allPages"
+        },
+        "ui": "src/ui.tsx"
+      }
+    ]
   }
 }

@@ -31,10 +31,13 @@ const DEFAULT_SETTINGS: Settings = {
   includeImage: true
 }
 
-function getAllComponents(): ComponentData[] {
-  const components: ComponentData[] = []
+type Scope = 'current-page' | 'all-pages'
 
-  for (const page of figma.root.children) {
+function getComponents(scope: Scope): ComponentData[] {
+  const components: ComponentData[] = []
+  const pages = scope === 'current-page' ? [figma.currentPage] : figma.root.children
+
+  for (const page of pages) {
     const nodes = page.findAllWithCriteria({
       types: ['COMPONENT', 'COMPONENT_SET']
     })
@@ -114,14 +117,16 @@ function parseVariantName(name: string): string[] {
   return name.split(',').map(part => part.trim()).filter(Boolean)
 }
 
-export default function () {
+function initPlugin(scope: Scope) {
+  const currentPageName = figma.currentPage.name
+
   showUI({
     width: 960,
     height: 800
-  })
+  }, { scope, currentPageName })
 
   on<LoadComponentsHandler>('LOAD_COMPONENTS', () => {
-    const components = getAllComponents()
+    const components = getComponents(scope)
     emit<ComponentsLoadedHandler>('COMPONENTS_LOADED', components)
   })
 
@@ -183,6 +188,15 @@ export default function () {
   on<ClosePluginHandler>('CLOSE_PLUGIN', () => {
     figma.closePlugin()
   })
+}
+
+// Named exports for menu commands
+export function currentPage() {
+  initPlugin('current-page')
+}
+
+export function allPages() {
+  initPlugin('all-pages')
 }
 
 function findPageForNode(node: BaseNode): PageNode | null {

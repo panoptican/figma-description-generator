@@ -1,1 +1,1 @@
-{"api":"1.0.0","editorType":["figma"],"id":"description-generator","name":"Description Generator","main":"build/main.js","ui":"build/ui.js"}
+{"api":"1.0.0","editorType":["figma"],"id":"description-generator","name":"Description Generator","main":"build/main.js","ui":"build/ui.js","menu":[{"name":"Current page","command":"src/main.ts--currentPage"},{"name":"All pages","command":"src/main.ts--allPages"}]}

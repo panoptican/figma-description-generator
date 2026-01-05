@@ -1,6 +1,7 @@
 import { EventHandler } from '@create-figma-plugin/utilities'
 
 export type AIProvider = 'gemini' | 'claude' | 'chatgpt'
+export type Scope = 'current-page' | 'all-pages'
 
 export interface ComponentData {
   id: string
