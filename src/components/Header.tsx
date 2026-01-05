@@ -46,7 +46,7 @@ export function Header({
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
         <div
           style={{
-            flex: 1,
+            width: '50%',
             border: '1px solid var(--figma-color-border)',
             borderRadius: '4px',
             backgroundColor: 'var(--figma-color-bg)'
