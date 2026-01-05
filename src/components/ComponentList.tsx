@@ -53,7 +53,7 @@ export function ComponentList({
   }
 
   return (
-    <div style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
+    <div style={{ flex: 1, overflow: 'auto', position: 'relative', zIndex: 0 }}>
       {/* Header Row - Fixed with solid background */}
       <div
         style={{
@@ -65,6 +65,7 @@ export function ComponentList({
           backgroundColor: 'var(--figma-color-bg)',
           position: 'sticky',
           top: 0,
+          zIndex: 2,
           height: `${HEADER_HEIGHT}px`,
           boxSizing: 'border-box',
           alignItems: 'center'
@@ -91,7 +92,8 @@ export function ComponentList({
               backgroundColor: 'var(--figma-color-bg-secondary)',
               borderBottom: '1px solid var(--figma-color-border)',
               position: 'sticky',
-              top: `${HEADER_HEIGHT}px`
+              top: `${HEADER_HEIGHT}px`,
+              zIndex: 1
             }}
           >
             <Text>
