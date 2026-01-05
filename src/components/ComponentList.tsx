@@ -72,13 +72,13 @@ export function ComponentList({
         }}
       >
         <Text>
-          <Bold>Layer Name</Bold>
+          <Muted>Layer Name</Muted>
         </Text>
         <Text>
-          <Bold>Description</Bold>
+          <Muted>Description</Muted>
         </Text>
         <Text>
-          <Bold>Actions</Bold>
+          <Muted>Actions</Muted>
         </Text>
       </div>
 

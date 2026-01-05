@@ -78,7 +78,7 @@ export function SettingsModal({
 
   return (
     <Modal open={isOpen} onCloseButtonClick={onClose} title="Settings">
-      <div style={{ padding: '16px', minWidth: '300px' }}>
+      <div style={{ padding: '16px', width: '480px' }}>
         <Text>
           <Bold>AI Provider</Bold>
         </Text>
