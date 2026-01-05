@@ -93,7 +93,9 @@ export function ComponentRow({
         gap: '16px',
         padding: '16px',
         borderBottom: '1px solid var(--figma-color-border)',
-        alignItems: 'start'
+        alignItems: 'start',
+        position: 'relative',
+        zIndex: 0
       }}
     >
       {/* Layer Name Column - Clickable */}
