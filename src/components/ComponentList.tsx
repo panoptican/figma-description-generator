@@ -65,7 +65,7 @@ export function ComponentList({
           backgroundColor: 'var(--figma-color-bg)',
           position: 'sticky',
           top: 0,
-          zIndex: 20,
+          zIndex: 2,
           height: `${HEADER_HEIGHT}px`,
           boxSizing: 'border-box',
           alignItems: 'center'
@@ -93,7 +93,7 @@ export function ComponentList({
               borderBottom: '1px solid var(--figma-color-border)',
               position: 'sticky',
               top: `${HEADER_HEIGHT}px`,
-              zIndex: 10
+              zIndex: 1
             }}
           >
             <Text>

@@ -149,7 +149,7 @@ export function ComponentRow({
         <textarea
           value={description}
           onInput={(e) => setDescription((e.target as HTMLTextAreaElement).value)}
-          rows={5}
+          rows={4}
           placeholder="Enter description..."
           style={{
             width: '100%',

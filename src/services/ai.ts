@@ -6,7 +6,7 @@ Component name: {name}
 Component type: {type}
 Properties: {properties}
 
-Write a clear description that explains what this component is and when to use it. Keep it under 2-3 sentences. Only output the description text, nothing else.`
+Write a clear description that explains what this component is and when to use it. Keep it under 1-2 sentences. Only output the description text, nothing else.`
 
 export const DEFAULT_VARIANT_PROMPT = `Generate a concise, professional description for a Figma design component variant.
 
@@ -14,7 +14,7 @@ Parent component: {parentName}
 Variant name: {name}
 Properties: {properties}
 
-This is a variant of the "{parentName}" component. Write a clear description that explains what this specific variant does and when to use it instead of other variants. Keep it under 2-3 sentences. Only output the description text, nothing else.`
+This is a variant of the "{parentName}" component. Write a clear description that explains what this specific variant does and when to use it instead of other variants. Keep it under 1-2 sentences. Only output the description text, nothing else.`
 
 function buildPrompt(
   componentName: string,
