@@ -91,7 +91,7 @@ export function ComponentRow({
         display: 'grid',
         gridTemplateColumns: `${columnWidths.layerName} ${columnWidths.description} ${columnWidths.actions}`,
         gap: '16px',
-        padding: '12px 16px',
+        padding: '16px',
         borderBottom: '1px solid var(--figma-color-border)',
         alignItems: 'start'
       }}
@@ -149,7 +149,7 @@ export function ComponentRow({
         <textarea
           value={description}
           onInput={(e) => setDescription((e.target as HTMLTextAreaElement).value)}
-          rows={3}
+          rows={5}
           placeholder="Enter description..."
           style={{
             width: '100%',
