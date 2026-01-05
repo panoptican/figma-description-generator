@@ -33,6 +33,7 @@ export function App() {
   const [components, setComponents] = useState<ComponentData[]>([])
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [searchValue, setSearchValue] = useState('')
+  const [showVariants, setShowVariants] = useState(true)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isGeneratingAll, setIsGeneratingAll] = useState(false)
@@ -103,8 +104,13 @@ export function App() {
     }
   }, [])
 
-  // Filter components by search
+  // Filter components by search and variant toggle
   const filteredComponents = components.filter((component) => {
+    // Filter out variants if toggle is off
+    if (!showVariants && component.type === 'VARIANT') {
+      return false
+    }
+
     if (!searchValue) return true
     const searchLower = searchValue.toLowerCase()
     return (
@@ -268,6 +274,8 @@ export function App() {
         isGenerating={isGeneratingAll}
         hasApiKey={!!settings.apiKey}
         progress={generateProgress}
+        showVariants={showVariants}
+        onShowVariantsChange={setShowVariants}
       />
 
       <ComponentList

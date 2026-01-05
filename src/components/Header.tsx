@@ -1,6 +1,7 @@
 import {
   Bold,
   Button,
+  Checkbox,
   SearchTextbox,
   Text
 } from '@create-figma-plugin/ui'
@@ -15,6 +16,8 @@ interface HeaderProps {
   isGenerating: boolean
   hasApiKey: boolean
   progress: { current: number; total: number }
+  showVariants: boolean
+  onShowVariantsChange: (value: boolean) => void
 }
 
 export function Header({
@@ -25,7 +28,9 @@ export function Header({
   onCancelClick,
   isGenerating,
   hasApiKey,
-  progress
+  progress,
+  showVariants,
+  onShowVariantsChange
 }: HeaderProps) {
   return (
     <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--figma-color-border)' }}>
@@ -70,6 +75,12 @@ export function Header({
             Generate All
           </Button>
         )}
+      </div>
+
+      <div style={{ marginTop: '8px' }}>
+        <Checkbox value={showVariants} onValueChange={onShowVariantsChange}>
+          <Text>Show variants</Text>
+        </Checkbox>
       </div>
 
       {!hasApiKey && (
