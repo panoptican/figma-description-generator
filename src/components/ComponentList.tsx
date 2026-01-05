@@ -1,13 +1,9 @@
 import { Bold, Muted, Text } from '@create-figma-plugin/ui'
 import { emit } from '@create-figma-plugin/utilities'
 import { Fragment, h } from 'preact'
-import { useEffect, useRef } from 'preact/hooks'
 
 import { ComponentData, SelectComponentHandler } from '../types'
 import { ComponentRow } from './ComponentRow'
-
-// Persist scroll position across re-renders
-let savedScrollTop = 0
 
 interface ComponentListProps {
   components: ComponentData[]
@@ -33,21 +29,6 @@ export function ComponentList({
   isGenerating,
   hasApiKey
 }: ComponentListProps) {
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-
-  // Restore scroll position after render
-  useEffect(() => {
-    if (scrollContainerRef.current && savedScrollTop > 0) {
-      scrollContainerRef.current.scrollTop = savedScrollTop
-    }
-  })
-
-  const handleScroll = () => {
-    if (scrollContainerRef.current) {
-      savedScrollTop = scrollContainerRef.current.scrollTop
-    }
-  }
-
   // Group components by page
   const groupedByPage = components.reduce((acc, component) => {
     if (!acc[component.pageName]) {
@@ -72,7 +53,7 @@ export function ComponentList({
   }
 
   return (
-    <div ref={scrollContainerRef} onScroll={handleScroll} style={{ flex: 1, overflow: 'auto', position: 'relative', zIndex: 0 }}>
+    <div style={{ flex: 1, overflow: 'auto', position: 'relative', zIndex: 0 }}>
       {/* Header Row - Fixed with solid background */}
       <div
         style={{
