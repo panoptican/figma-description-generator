@@ -166,7 +166,7 @@ export default function () {
       if (node && 'exportAsync' in node) {
         const bytes = await (node as SceneNode).exportAsync({
           format: 'PNG',
-          constraint: { type: 'SCALE', value: 2 }
+          constraint: { type: 'SCALE', value: 1 }
         })
         // Convert Uint8Array to base64
         const base64 = figma.base64Encode(bytes)

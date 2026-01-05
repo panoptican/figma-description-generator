@@ -120,7 +120,7 @@ export function SettingsModal({
         </Checkbox>
         <VerticalSpace space="small" />
         <Text>
-          <Muted>Sends a 2x PNG of each component to the AI for better descriptions</Muted>
+          <Muted>Sends a PNG of each component to the AI for better descriptions</Muted>
         </Text>
 
         <VerticalSpace space="extraLarge" />
