@@ -1,6 +1,7 @@
 import {
   Bold,
   Button,
+  Checkbox,
   Dropdown,
   DropdownOption,
   Link,
@@ -42,16 +43,18 @@ export function SettingsModal({
   const [apiKey, setApiKey] = useState(settings.apiKey)
   const [customPrompt, setCustomPrompt] = useState(settings.customPrompt)
   const [customVariantPrompt, setCustomVariantPrompt] = useState(settings.customVariantPrompt)
+  const [includeImage, setIncludeImage] = useState(settings.includeImage)
 
   useEffect(() => {
     setProvider(settings.provider)
     setApiKey(settings.apiKey)
     setCustomPrompt(settings.customPrompt)
     setCustomVariantPrompt(settings.customVariantPrompt)
+    setIncludeImage(settings.includeImage)
   }, [settings, isOpen])
 
   function handleSave() {
-    onSave({ provider, apiKey, customPrompt, customVariantPrompt })
+    onSave({ provider, apiKey, customPrompt, customVariantPrompt, includeImage })
     onClose()
   }
 
@@ -105,6 +108,19 @@ export function SettingsModal({
         <VerticalSpace space="small" />
         <Text>
           <Muted>{getProviderHelpText()}</Muted>
+        </Text>
+
+        <VerticalSpace space="large" />
+
+        <Checkbox
+          value={includeImage}
+          onValueChange={setIncludeImage}
+        >
+          <Text>Include component image in prompt</Text>
+        </Checkbox>
+        <VerticalSpace space="small" />
+        <Text>
+          <Muted>Sends a 2x PNG of each component to the AI for better descriptions</Muted>
         </Text>
 
         <VerticalSpace space="extraLarge" />

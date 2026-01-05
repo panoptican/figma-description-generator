@@ -17,6 +17,7 @@ export interface Settings {
   apiKey: string
   customPrompt: string
   customVariantPrompt: string
+  includeImage: boolean
 }
 
 export interface LoadComponentsHandler extends EventHandler {
@@ -67,4 +68,14 @@ export interface ClosePluginHandler extends EventHandler {
 export interface SelectComponentHandler extends EventHandler {
   name: 'SELECT_COMPONENT'
   handler: (data: { id: string }) => void
+}
+
+export interface ExportImageHandler extends EventHandler {
+  name: 'EXPORT_IMAGE'
+  handler: (data: { id: string }) => void
+}
+
+export interface ImageExportedHandler extends EventHandler {
+  name: 'IMAGE_EXPORTED'
+  handler: (data: { id: string; imageBase64: string | null }) => void
 }

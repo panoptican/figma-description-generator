@@ -12,6 +12,8 @@ import {
   ComponentData,
   ComponentsLoadedHandler,
   DescriptionAppliedHandler,
+  ExportImageHandler,
+  ImageExportedHandler,
   LoadComponentsHandler,
   LoadSettingsHandler,
   SaveSettingsHandler,
@@ -25,7 +27,8 @@ const DEFAULT_SETTINGS: Settings = {
   provider: 'chatgpt',
   apiKey: '',
   customPrompt: '',
-  customVariantPrompt: ''
+  customVariantPrompt: '',
+  includeImage: true
 }
 
 function getAllComponents(): ComponentData[] {
@@ -154,6 +157,26 @@ export default function () {
       // Select and zoom to the node
       figma.currentPage.selection = [node as SceneNode]
       figma.viewport.scrollAndZoomIntoView([node as SceneNode])
+    }
+  })
+
+  on<ExportImageHandler>('EXPORT_IMAGE', async ({ id }) => {
+    try {
+      const node = figma.getNodeById(id)
+      if (node && 'exportAsync' in node) {
+        const bytes = await (node as SceneNode).exportAsync({
+          format: 'PNG',
+          constraint: { type: 'SCALE', value: 2 }
+        })
+        // Convert Uint8Array to base64
+        const base64 = figma.base64Encode(bytes)
+        emit<ImageExportedHandler>('IMAGE_EXPORTED', { id, imageBase64: base64 })
+      } else {
+        emit<ImageExportedHandler>('IMAGE_EXPORTED', { id, imageBase64: null })
+      }
+    } catch (error) {
+      console.error('Failed to export image:', error)
+      emit<ImageExportedHandler>('IMAGE_EXPORTED', { id, imageBase64: null })
     }
   })
 

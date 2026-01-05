@@ -7,6 +7,8 @@ import {
   ComponentData,
   ComponentsLoadedHandler,
   DescriptionAppliedHandler,
+  ExportImageHandler,
+  ImageExportedHandler,
   LoadComponentsHandler,
   LoadSettingsHandler,
   SaveSettingsHandler,
@@ -23,7 +25,8 @@ const DEFAULT_SETTINGS: Settings = {
   provider: 'chatgpt',
   apiKey: '',
   customPrompt: '',
-  customVariantPrompt: ''
+  customVariantPrompt: '',
+  includeImage: true
 }
 
 export function App() {
@@ -35,6 +38,15 @@ export function App() {
   const [isGeneratingAll, setIsGeneratingAll] = useState(false)
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: 0 })
   const abortGenerateAllRef = useRef(false)
+  const imageExportResolveRef = useRef<((imageBase64: string | null) => void) | null>(null)
+
+  // Helper to export component image and wait for result
+  const exportComponentImage = useCallback((componentId: string): Promise<string | null> => {
+    return new Promise((resolve) => {
+      imageExportResolveRef.current = resolve
+      emit<ExportImageHandler>('EXPORT_IMAGE', { id: componentId })
+    })
+  }, [])
 
   // Load initial data
   useEffect(() => {
@@ -69,6 +81,16 @@ export function App() {
       }
     )
 
+    const unsubscribeImageExported = on<ImageExportedHandler>(
+      'IMAGE_EXPORTED',
+      ({ imageBase64 }) => {
+        if (imageExportResolveRef.current) {
+          imageExportResolveRef.current(imageBase64)
+          imageExportResolveRef.current = null
+        }
+      }
+    )
+
     emit<LoadSettingsHandler>('LOAD_SETTINGS')
     emit<LoadComponentsHandler>('LOAD_COMPONENTS')
 
@@ -77,6 +99,7 @@ export function App() {
       unsubscribeSettings()
       unsubscribeSettingsSaved()
       unsubscribeDescriptionApplied()
+      unsubscribeImageExported()
     }
   }, [])
 
@@ -93,6 +116,15 @@ export function App() {
 
   const handleGenerate = useCallback(
     async (component: ComponentData): Promise<string> => {
+      let imageBase64: string | undefined
+
+      if (settings.includeImage) {
+        const image = await exportComponentImage(component.id)
+        if (image) {
+          imageBase64 = image
+        }
+      }
+
       return generateDescription(
         settings.provider,
         settings.apiKey,
@@ -101,10 +133,11 @@ export function App() {
         component.properties,
         component.parentName,
         settings.customPrompt || undefined,
-        settings.customVariantPrompt || undefined
+        settings.customVariantPrompt || undefined,
+        imageBase64
       )
     },
-    [settings]
+    [settings, exportComponentImage]
   )
 
   const handleConfirm = useCallback((id: string, description: string) => {
@@ -149,6 +182,15 @@ export function App() {
       }
 
       try {
+        let imageBase64: string | undefined
+
+        if (settings.includeImage) {
+          const image = await exportComponentImage(component.id)
+          if (image) {
+            imageBase64 = image
+          }
+        }
+
         const description = await generateDescription(
           settings.provider,
           settings.apiKey,
@@ -157,7 +199,8 @@ export function App() {
           component.properties,
           component.parentName,
           settings.customPrompt || undefined,
-          settings.customVariantPrompt || undefined
+          settings.customVariantPrompt || undefined,
+          imageBase64
         )
 
         // Check again after async call in case cancelled during generation
@@ -186,7 +229,7 @@ export function App() {
     setIsGeneratingAll(false)
     setGenerateProgress({ current: 0, total: 0 })
     abortGenerateAllRef.current = false
-  }, [filteredComponents, settings])
+  }, [filteredComponents, settings, exportComponentImage])
 
   const handleCancelGenerateAll = useCallback(() => {
     abortGenerateAllRef.current = true
