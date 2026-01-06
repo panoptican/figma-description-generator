@@ -1,20 +1,32 @@
 import { AIProvider } from '../types'
 
-export const DEFAULT_PROMPT = `Generate a concise, professional description for a Figma design component.
+export const DEFAULT_PROMPT = `Write a brief description for a design system component.
 
 Component name: {name}
-Component type: {type}
+Type: {type}
 Properties: {properties}
 
-Write a clear description that explains what this component is and when to use it. Keep it under 1-2 sentences. Only output the description text, nothing else.`
+Rules:
+- 1-2 sentences maximum
+- Never start with "This component" or "A component that"
+- Describe what it does and when to use it directly
+- Write like Shopify Polaris documentation (e.g. "Displays a list of actions..." or "Provides navigation between pages...")
 
-export const DEFAULT_VARIANT_PROMPT = `Generate a concise, professional description for a Figma design component variant.
+Output only the description text.`
+
+export const DEFAULT_VARIANT_PROMPT = `Write a brief description for a component variant.
 
 Parent component: {parentName}
-Variant name: {name}
+Variant: {name}
 Properties: {properties}
 
-This is a variant of the "{parentName}" component. Write a clear description that explains what this specific variant does and when to use it instead of other variants. Keep it under 1-2 sentences. Only output the description text, nothing else.`
+Rules:
+- 1 sentence maximum
+- Never start with "This variant" or "A variant that"
+- Explain what makes this variant different and when to use it
+- Be direct (e.g. "Used for destructive actions like delete" or "Displays in a compact size for dense layouts")
+
+Output only the description text.`
 
 function buildPrompt(
   componentName: string,
