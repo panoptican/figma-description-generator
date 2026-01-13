@@ -44,6 +44,8 @@ export function SettingsModal({
   const [customPrompt, setCustomPrompt] = useState(settings.customPrompt)
   const [customVariantPrompt, setCustomVariantPrompt] = useState(settings.customVariantPrompt)
   const [includeImage, setIncludeImage] = useState(settings.includeImage)
+  const [showVariants, setShowVariants] = useState(settings.showVariants)
+  const [overwriteExisting, setOverwriteExisting] = useState(settings.overwriteExisting)
 
   useEffect(() => {
     setProvider(settings.provider)
@@ -51,10 +53,20 @@ export function SettingsModal({
     setCustomPrompt(settings.customPrompt)
     setCustomVariantPrompt(settings.customVariantPrompt)
     setIncludeImage(settings.includeImage)
+    setShowVariants(settings.showVariants)
+    setOverwriteExisting(settings.overwriteExisting)
   }, [settings, isOpen])
 
   function handleSave() {
-    onSave({ provider, apiKey, customPrompt, customVariantPrompt, includeImage })
+    onSave({
+      provider,
+      apiKey,
+      customPrompt,
+      customVariantPrompt,
+      includeImage,
+      showVariants,
+      overwriteExisting
+    })
     onClose()
   }
 
@@ -122,6 +134,16 @@ export function SettingsModal({
         <Text>
           <Muted>Sends a PNG of each component to the AI for better descriptions</Muted>
         </Text>
+
+        <VerticalSpace space="medium" />
+
+        <Checkbox value={showVariants} onValueChange={setShowVariants}>
+          <Text>Show variants in list</Text>
+        </Checkbox>
+        <VerticalSpace space="extraSmall" />
+        <Checkbox value={overwriteExisting} onValueChange={setOverwriteExisting}>
+          <Text>Overwrite existing descriptions when generating all</Text>
+        </Checkbox>
 
         <VerticalSpace space="extraLarge" />
 

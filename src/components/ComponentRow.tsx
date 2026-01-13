@@ -1,28 +1,19 @@
-import {
-  Button,
-  Muted,
-  Text
-} from '@create-figma-plugin/ui'
-import { Fragment, h } from 'preact'
+import { Button, Text } from '@create-figma-plugin/ui'
+import { h } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 
 import { ComponentData } from '../types'
-
-interface ColumnWidths {
-  layerName: string
-  description: string
-  actions: string
-}
 
 interface ComponentRowProps {
   component: ComponentData
   onGenerate: (component: ComponentData) => Promise<string>
   onConfirm: (id: string, description: string) => void
   onReject: (id: string) => void
+  onRevert: (id: string) => void
   onSelect: (id: string) => void
   isGenerating: boolean
   hasApiKey: boolean
-  columnWidths: ColumnWidths
+  externalError?: string
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -42,22 +33,39 @@ export function ComponentRow({
   onGenerate,
   onConfirm,
   onReject,
+  onRevert,
   onSelect,
   isGenerating,
   hasApiKey,
-  columnWidths
+  externalError
 }: ComponentRowProps) {
   const [description, setDescription] = useState(component.currentDescription)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isDirty, setIsDirty] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
 
-  // Sync description when component prop changes (e.g., from Generate All)
   useEffect(() => {
     setDescription(component.currentDescription)
+    setIsDirty(false)
+    setIsSaving(false)
   }, [component.currentDescription])
 
-  const hasChanges = description !== component.currentDescription
-  const isVariant = component.type === 'VARIANT'
+  useEffect(() => {
+    if (!isDirty || description === component.currentDescription) {
+      return
+    }
+
+    const timeout = setTimeout(() => {
+      setIsSaving(true)
+      onConfirm(component.id, description)
+      setIsDirty(false)
+    }, 800)
+
+    return () => clearTimeout(timeout)
+  }, [description, isDirty, component.currentDescription, component.id, onConfirm])
+
+  const hasDescription = !!component.currentDescription
 
   async function handleGenerate() {
     setLoading(true)
@@ -79,6 +87,7 @@ export function ComponentRow({
   function handleReject() {
     setDescription(component.currentDescription)
     onReject(component.id)
+    setIsDirty(false)
   }
 
   function handleNameClick() {
@@ -89,16 +98,13 @@ export function ComponentRow({
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: `${columnWidths.layerName} ${columnWidths.description} ${columnWidths.actions}`,
+        gridTemplateColumns: '260px 1fr 160px',
         gap: '16px',
-        padding: '16px',
+        padding: '12px 16px',
         borderBottom: '1px solid var(--figma-color-border)',
-        alignItems: 'start',
-        position: 'relative',
-        zIndex: 0
+        alignItems: 'start'
       }}
     >
-      {/* Layer Name Column - Clickable */}
       <div
         onClick={handleNameClick}
         style={{ cursor: 'pointer' }}
@@ -118,7 +124,7 @@ export function ComponentRow({
         >
           {TYPE_LABELS[component.type]}
         </div>
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span
             style={{
               color: 'var(--figma-color-text-brand)',
@@ -136,28 +142,34 @@ export function ComponentRow({
           >
             {component.name}
           </span>
+          {hasDescription && <span style={{ color: 'var(--figma-color-text-success)' }}>✓</span>}
         </div>
-        {component.properties.length > 0 && component.type !== 'VARIANT' && (
+        {component.properties.length > 0 && (
           <div style={{ marginTop: '4px', fontSize: '11px' }}>
             <Text>
-              <Muted>{component.properties.join(' | ')}</Muted>
+              <span style={{ color: 'var(--figma-color-text-secondary)' }}>
+                {component.properties.join(' | ')}
+              </span>
             </Text>
           </div>
         )}
       </div>
 
-      {/* Description Column */}
       <div style={{ minWidth: 0 }}>
         <textarea
           value={description}
-          onInput={(e) => setDescription((e.target as HTMLTextAreaElement).value)}
+          onInput={(e) => {
+            setDescription((e.target as HTMLTextAreaElement).value)
+            setIsDirty(true)
+            setError(null)
+          }}
           rows={4}
           placeholder="Enter description..."
           style={{
             width: '100%',
-            padding: '8px',
+            padding: '10px',
             border: '1px solid var(--figma-color-border)',
-            borderRadius: '4px',
+            borderRadius: '6px',
             backgroundColor: 'var(--figma-color-bg)',
             color: 'var(--figma-color-text)',
             fontFamily: 'Inter, sans-serif',
@@ -167,41 +179,37 @@ export function ComponentRow({
             boxSizing: 'border-box'
           }}
         />
-        {error && (
+        {(error || externalError) && (
           <div style={{ color: 'var(--figma-color-text-danger)', marginTop: '4px', fontSize: '11px' }}>
-            {error}
+            {error || externalError}
+          </div>
+        )}
+        {isSaving && (
+          <div style={{ color: 'var(--figma-color-text-secondary)', marginTop: '4px', fontSize: '11px' }}>
+            Saving…
           </div>
         )}
       </div>
 
-      {/* Actions Column */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'stretch' }}>
         <Button
           onClick={handleGenerate}
           disabled={loading || isGenerating || !hasApiKey}
           loading={loading}
           fullWidth
+          style={{ justifyContent: 'center' }}
         >
           Generate
         </Button>
 
-        {hasChanges && (
-          <Fragment>
-            <Button
-              onClick={handleConfirm}
-              fullWidth
-            >
-              Confirm
-            </Button>
-            <Button
-              onClick={handleReject}
-              secondary
-              fullWidth
-              danger
-            >
-              Reject
-            </Button>
-          </Fragment>
+        {component.previousDescription && (
+          <Button
+            onClick={() => onRevert(component.id)}
+            secondary
+            fullWidth
+          >
+            Revert to last
+          </Button>
         )}
       </div>
     </div>

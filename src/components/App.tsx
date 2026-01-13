@@ -15,7 +15,8 @@ import {
   Scope,
   Settings,
   SettingsLoadedHandler,
-  SettingsSavedHandler
+  SettingsSavedHandler,
+  SelectComponentHandler
 } from '../types'
 import { generateDescription, DEFAULT_PROMPT, DEFAULT_VARIANT_PROMPT } from '../services/ai'
 import { Header } from './Header'
@@ -32,20 +33,23 @@ const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
   customPrompt: '',
   customVariantPrompt: '',
-  includeImage: true
+  includeImage: false,
+  showVariants: true,
+  overwriteExisting: false
 }
 
 export function App({ scope, currentPageName }: AppProps) {
   const [components, setComponents] = useState<ComponentData[]>([])
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [searchValue, setSearchValue] = useState('')
-  const [showVariants, setShowVariants] = useState(true)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isGeneratingAll, setIsGeneratingAll] = useState(false)
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: 0 })
+  const [rowErrors, setRowErrors] = useState<Record<string, string | undefined>>({})
   const abortGenerateAllRef = useRef(false)
   const imageExportResolveRef = useRef<((imageBase64: string | null) => void) | null>(null)
+  const CONCURRENCY_LIMIT = 3
 
   // Helper to export component image and wait for result
   const exportComponentImage = useCallback((componentId: string): Promise<string | null> => {
@@ -68,7 +72,7 @@ export function App({ scope, currentPageName }: AppProps) {
     const unsubscribeSettings = on<SettingsLoadedHandler>(
       'SETTINGS_LOADED',
       (loadedSettings) => {
-        setSettings(loadedSettings)
+        setSettings({ ...DEFAULT_SETTINGS, ...loadedSettings })
       }
     )
 
@@ -84,6 +88,9 @@ export function App({ scope, currentPageName }: AppProps) {
       ({ id, success }) => {
         if (!success) {
           console.error(`Failed to apply description for component ${id}`)
+          setRowErrors((prev) => ({ ...prev, [id]: 'Failed to apply description to canvas' }))
+        } else {
+          setRowErrors((prev) => ({ ...prev, [id]: undefined }))
         }
       }
     )
@@ -112,8 +119,7 @@ export function App({ scope, currentPageName }: AppProps) {
 
   // Filter components by search and variant toggle
   const filteredComponents = components.filter((component) => {
-    // Filter out variants if toggle is off
-    if (!showVariants && component.type === 'VARIANT') {
+    if (!settings.showVariants && component.type === 'VARIANT') {
       return false
     }
 
@@ -125,6 +131,12 @@ export function App({ scope, currentPageName }: AppProps) {
       component.properties.some((p) => p.toLowerCase().includes(searchLower))
     )
   })
+
+  const totalDisplayed = filteredComponents.length
+  const missingCount = filteredComponents.filter((c) => !c.currentDescription).length
+  const generateCount = filteredComponents.filter(
+    (c) => settings.overwriteExisting || !c.currentDescription
+  ).length
 
   const handleGenerate = useCallback(
     async (component: ComponentData): Promise<string> => {
@@ -158,14 +170,45 @@ export function App({ scope, currentPageName }: AppProps) {
     // Update local state
     setComponents((prev) =>
       prev.map((c) =>
-        c.id === id ? { ...c, currentDescription: description } : c
+        c.id === id
+          ? {
+              ...c,
+              previousDescription: c.currentDescription,
+              currentDescription: description
+            }
+          : c
       )
     )
+    setRowErrors((prev) => ({ ...prev, [id]: undefined }))
   }, [])
 
   const handleReject = useCallback((id: string) => {
     // Reset is handled in ComponentRow
   }, [])
+
+  const handleRevert = useCallback((id: string) => {
+    const target = components.find((c) => c.id === id)
+    if (!target || target.previousDescription === undefined) {
+      return
+    }
+
+    setComponents((prev) =>
+      prev.map((c) =>
+        c.id === id && c.previousDescription !== undefined
+          ? {
+              ...c,
+              currentDescription: c.previousDescription,
+              previousDescription: c.currentDescription
+            }
+          : c
+      )
+    )
+    setRowErrors((prev) => ({ ...prev, [id]: undefined }))
+    emit<ApplyDescriptionHandler>('APPLY_DESCRIPTION', {
+      id,
+      description: target.previousDescription
+    })
+  }, [components])
 
   const handleSaveSettings = useCallback((newSettings: Settings) => {
     setSettings(newSettings)
@@ -178,20 +221,23 @@ export function App({ scope, currentPageName }: AppProps) {
     setIsGeneratingAll(true)
     abortGenerateAllRef.current = false
 
-    // Generate descriptions for all components without existing descriptions
     const componentsToGenerate = filteredComponents.filter(
-      (c) => !c.currentDescription
+      (c) => settings.overwriteExisting || !c.currentDescription
     )
+
+    if (componentsToGenerate.length === 0) {
+      setIsGeneratingAll(false)
+      setGenerateProgress({ current: 0, total: 0 })
+      return
+    }
 
     setGenerateProgress({ current: 0, total: componentsToGenerate.length })
 
-    for (let i = 0; i < componentsToGenerate.length; i++) {
-      const component = componentsToGenerate[i]
+    let completed = 0
+    let currentIndex = 0
 
-      // Check if cancelled
-      if (abortGenerateAllRef.current) {
-        break
-      }
+    const processComponent = async (component: ComponentData) => {
+      if (abortGenerateAllRef.current) return
 
       try {
         let imageBase64: string | undefined
@@ -215,10 +261,7 @@ export function App({ scope, currentPageName }: AppProps) {
           imageBase64
         )
 
-        // Check again after async call in case cancelled during generation
-        if (abortGenerateAllRef.current) {
-          break
-        }
+        if (abortGenerateAllRef.current) return
 
         emit<ApplyDescriptionHandler>('APPLY_DESCRIPTION', {
           id: component.id,
@@ -227,16 +270,40 @@ export function App({ scope, currentPageName }: AppProps) {
 
         setComponents((prev) =>
           prev.map((c) =>
-            c.id === component.id ? { ...c, currentDescription: description } : c
+            c.id === component.id
+              ? {
+                  ...c,
+                  previousDescription: c.currentDescription,
+                  currentDescription: description
+                }
+              : c
           )
         )
 
-        setGenerateProgress({ current: i + 1, total: componentsToGenerate.length })
+        setRowErrors((prev) => ({ ...prev, [component.id]: undefined }))
       } catch (error) {
         console.error(`Failed to generate for ${component.name}:`, error)
-        setGenerateProgress({ current: i + 1, total: componentsToGenerate.length })
+        setRowErrors((prev) => ({
+          ...prev,
+          [component.id]: error instanceof Error ? error.message : 'Generation failed'
+        }))
+      } finally {
+        completed += 1
+        setGenerateProgress({ current: completed, total: componentsToGenerate.length })
       }
     }
+
+    const runWorker = async () => {
+      while (!abortGenerateAllRef.current) {
+        const index = currentIndex++
+        const component = componentsToGenerate[index]
+        if (!component) break
+        await processComponent(component)
+      }
+    }
+
+    const workerCount = Math.min(CONCURRENCY_LIMIT, componentsToGenerate.length || 1)
+    await Promise.all(Array.from({ length: workerCount }, runWorker))
 
     setIsGeneratingAll(false)
     setGenerateProgress({ current: 0, total: 0 })
@@ -280,8 +347,9 @@ export function App({ scope, currentPageName }: AppProps) {
         isGenerating={isGeneratingAll}
         hasApiKey={!!settings.apiKey}
         progress={generateProgress}
-        showVariants={showVariants}
-        onShowVariantsChange={setShowVariants}
+        totalCount={totalDisplayed}
+        missingCount={missingCount}
+        generateCount={generateCount}
         scope={scope}
         currentPageName={currentPageName}
       />
@@ -291,8 +359,11 @@ export function App({ scope, currentPageName }: AppProps) {
         onGenerate={handleGenerate}
         onConfirm={handleConfirm}
         onReject={handleReject}
+        onRevert={handleRevert}
+        onSelect={(id) => emit<SelectComponentHandler>('SELECT_COMPONENT', { id })}
         isGenerating={isGeneratingAll}
         hasApiKey={!!settings.apiKey}
+        rowErrors={rowErrors}
       />
 
       <SettingsModal

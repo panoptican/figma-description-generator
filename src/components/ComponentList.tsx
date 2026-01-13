@@ -1,9 +1,8 @@
-import { Bold, Muted, Text } from '@create-figma-plugin/ui'
-import { emit } from '@create-figma-plugin/utilities'
-import { Fragment, h } from 'preact'
+import { Muted, Text } from '@create-figma-plugin/ui'
+import { h } from 'preact'
 import { useState } from 'preact/hooks'
 
-import { ComponentData, SelectComponentHandler } from '../types'
+import { ComponentData } from '../types'
 import { ComponentRow } from './ComponentRow'
 
 interface ComponentListProps {
@@ -11,15 +10,11 @@ interface ComponentListProps {
   onGenerate: (component: ComponentData) => Promise<string>
   onConfirm: (id: string, description: string) => void
   onReject: (id: string) => void
+  onRevert: (id: string) => void
   isGenerating: boolean
   hasApiKey: boolean
-}
-
-const HEADER_HEIGHT = 33
-const COLUMN_WIDTHS = {
-  layerName: '240px',
-  description: '1fr',
-  actions: '140px'
+  rowErrors: Record<string, string | undefined>
+  onSelect: (id: string) => void
 }
 
 export function ComponentList({
@@ -27,35 +22,13 @@ export function ComponentList({
   onGenerate,
   onConfirm,
   onReject,
+  onRevert,
   isGenerating,
-  hasApiKey
+  hasApiKey,
+  rowErrors,
+  onSelect
 }: ComponentListProps) {
   const [collapsedPages, setCollapsedPages] = useState<Set<string>>(new Set())
-
-  // Group components by page
-  const groupedByPage = components.reduce((acc, component) => {
-    if (!acc[component.pageName]) {
-      acc[component.pageName] = []
-    }
-    acc[component.pageName].push(component)
-    return acc
-  }, {} as Record<string, ComponentData[]>)
-
-  const handleSelectComponent = (id: string) => {
-    emit<SelectComponentHandler>('SELECT_COMPONENT', { id })
-  }
-
-  const togglePageCollapse = (pageName: string) => {
-    setCollapsedPages((prev) => {
-      const next = new Set(prev)
-      if (next.has(pageName)) {
-        next.delete(pageName)
-      } else {
-        next.add(pageName)
-      }
-      return next
-    })
-  }
 
   if (components.length === 0) {
     return (
@@ -69,11 +42,10 @@ export function ComponentList({
 
   return (
     <div style={{ flex: 1, overflow: 'auto', position: 'relative', zIndex: 0 }}>
-      {/* Header Row - Fixed with solid background */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: `${COLUMN_WIDTHS.layerName} ${COLUMN_WIDTHS.description} ${COLUMN_WIDTHS.actions}`,
+          gridTemplateColumns: '260px 1fr 160px',
           gap: '16px',
           padding: '8px 16px',
           borderBottom: '1px solid var(--figma-color-border)',
@@ -81,7 +53,7 @@ export function ComponentList({
           position: 'sticky',
           top: 0,
           zIndex: 2,
-          height: `${HEADER_HEIGHT}px`,
+          height: '33px',
           boxSizing: 'border-box',
           alignItems: 'center'
         }}
@@ -97,21 +69,30 @@ export function ComponentList({
         </Text>
       </div>
 
-      {/* Component Rows Grouped by Page */}
-      {Object.entries(groupedByPage).map(([pageName, pageComponents]) => {
+      {Object.entries(
+        components.reduce((acc, component) => {
+          if (!acc[component.pageName]) {
+            acc[component.pageName] = []
+          }
+          acc[component.pageName].push(component)
+          return acc
+        }, {} as Record<string, ComponentData[]>)
+      ).map(([pageName, pageComponents]) => {
         const isCollapsed = collapsedPages.has(pageName)
         return (
-          <Fragment key={pageName}>
-            {/* Page Header - Sticky below the main header, clickable to collapse */}
+          <div key={pageName}>
             <div
-              onClick={() => togglePageCollapse(pageName)}
+              onClick={() =>
+                setCollapsedPages((prev) => {
+                  const next = new Set(prev)
+                  next.has(pageName) ? next.delete(pageName) : next.add(pageName)
+                  return next
+                })
+              }
               style={{
                 padding: '8px 16px',
                 backgroundColor: 'var(--figma-color-bg-secondary)',
                 borderBottom: '1px solid var(--figma-color-border)',
-                position: 'sticky',
-                top: `${HEADER_HEIGHT}px`,
-                zIndex: 1,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
@@ -131,14 +112,13 @@ export function ComponentList({
                 ▼
               </span>
               <Text>
-                <Bold>Page: {pageName}</Bold>
+                <Text style={{ fontWeight: 600 }}>Page: {pageName}</Text>
               </Text>
               <Text>
                 <Muted>({pageComponents.length})</Muted>
               </Text>
             </div>
 
-            {/* Components in this page */}
             {!isCollapsed &&
               pageComponents.map((component) => (
                 <ComponentRow
@@ -147,13 +127,14 @@ export function ComponentList({
                   onGenerate={onGenerate}
                   onConfirm={onConfirm}
                   onReject={onReject}
-                  onSelect={handleSelectComponent}
+                  onRevert={onRevert}
+                  onSelect={onSelect}
                   isGenerating={isGenerating}
                   hasApiKey={hasApiKey}
-                  columnWidths={COLUMN_WIDTHS}
+                  externalError={rowErrors[component.id]}
                 />
               ))}
-          </Fragment>
+          </div>
         )
       })}
     </div>

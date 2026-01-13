@@ -28,7 +28,9 @@ const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
   customPrompt: '',
   customVariantPrompt: '',
-  includeImage: true
+  includeImage: false,
+  showVariants: true,
+  overwriteExisting: false
 }
 
 type Scope = 'current-page' | 'all-pages'

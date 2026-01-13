@@ -9,6 +9,7 @@ export interface ComponentData {
   type: 'COMPONENT' | 'COMPONENT_SET' | 'VARIANT'
   properties: string[]
   currentDescription: string
+  previousDescription?: string
   pageName: string
   parentName?: string
 }
@@ -19,6 +20,8 @@ export interface Settings {
   customPrompt: string
   customVariantPrompt: string
   includeImage: boolean
+  showVariants: boolean
+  overwriteExisting: boolean
 }
 
 export interface LoadComponentsHandler extends EventHandler {

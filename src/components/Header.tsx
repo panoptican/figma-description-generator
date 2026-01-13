@@ -1,11 +1,4 @@
-import {
-  Bold,
-  Button,
-  Checkbox,
-  Muted,
-  SearchTextbox,
-  Text
-} from '@create-figma-plugin/ui'
+import { Bold, Button, Muted, SearchTextbox, Text } from '@create-figma-plugin/ui'
 import { Fragment, h } from 'preact'
 
 import { Scope } from '../types'
@@ -19,8 +12,9 @@ interface HeaderProps {
   isGenerating: boolean
   hasApiKey: boolean
   progress: { current: number; total: number }
-  showVariants: boolean
-  onShowVariantsChange: (value: boolean) => void
+  totalCount: number
+  missingCount: number
+  generateCount: number
   scope: Scope
   currentPageName: string
 }
@@ -34,11 +28,33 @@ export function Header({
   isGenerating,
   hasApiKey,
   progress,
-  showVariants,
-  onShowVariantsChange,
+  totalCount,
+  missingCount,
+  generateCount,
   scope,
   currentPageName
 }: HeaderProps) {
+  const SparkleIcon = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 3v3" />
+      <path d="M12 18v3" />
+      <path d="M3 12h3" />
+      <path d="M18 12h3" />
+      <path d="M5.6 5.6 7.8 7.8" />
+      <path d="M16.2 16.2 18.4 18.4" />
+      <path d="M5.6 18.4 7.8 16.2" />
+      <path d="M16.2 7.8 18.4 5.6" />
+      <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z" />
+    </svg>
+  )
+
+  const SettingsIcon = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .69.4 1.3 1 1.58.19.09.4.14.61.14H21a2 2 0 0 1 0 4h-.09c-.21 0-.42.05-.61.14-.6.28-1 .89-1 1.58Z" />
+    </svg>
+  )
+
   return (
     <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--figma-color-border)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
@@ -57,10 +73,31 @@ export function Header({
           >
             {scope === 'current-page' ? `Page: ${currentPageName}` : 'All pages'}
           </span>
+          <Text style={{ color: 'var(--figma-color-text-secondary)' }}>
+            • {totalCount} components
+          </Text>
+          <Text style={{ color: missingCount > 0 ? 'var(--figma-color-text-danger)' : 'var(--figma-color-text-secondary)' }}>
+            • {missingCount} missing
+          </Text>
         </div>
-        <Button onClick={onSettingsClick} secondary>
-          Settings
-        </Button>
+        <button
+          onClick={onSettingsClick}
+          aria-label="Open settings"
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: '50%',
+            border: '1px solid var(--figma-color-border)',
+            backgroundColor: 'var(--figma-color-bg)',
+            color: 'var(--figma-color-text)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer'
+          }}
+        >
+          <SettingsIcon />
+        </button>
       </div>
 
       <div style={{
@@ -73,7 +110,7 @@ export function Header({
           <div
             style={{
               border: '1px solid var(--figma-color-border)',
-              borderRadius: '4px',
+              borderRadius: '6px',
               backgroundColor: 'var(--figma-color-bg)'
             }}
           >
@@ -83,9 +120,9 @@ export function Header({
               onValueInput={onSearchChange}
             />
           </div>
-          <Checkbox value={showVariants} onValueChange={onShowVariantsChange}>
-            <Text>Show variants</Text>
-          </Checkbox>
+          <Text style={{ fontSize: '11px' }}>
+            <Muted>Generate All respects search and filters.</Muted>
+          </Text>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -104,12 +141,12 @@ export function Header({
                 onClick={onGenerateAllClick}
                 disabled={!hasApiKey}
                 fullWidth
-                style={{ height: '40px', fontSize: '13px' }}
+                style={{ height: '40px', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
               >
-                Generate All
+                <SparkleIcon /> Generate All ({generateCount})
               </Button>
               <Text style={{ fontSize: '10px', textAlign: 'center', marginTop: '4px' }}>
-                <Muted>Only fills empty descriptions</Muted>
+                <Muted>{hasApiKey ? 'Uses visible components in the list' : 'Add an API key to start'}</Muted>
               </Text>
             </Fragment>
           )}
