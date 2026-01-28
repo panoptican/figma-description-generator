@@ -28,7 +28,7 @@ Rules:
 
 Output only the description text.`
 
-function buildPrompt(
+export function buildPrompt(
   componentName: string,
   componentType: string,
   properties: string[],
