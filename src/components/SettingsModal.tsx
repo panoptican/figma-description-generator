@@ -4,7 +4,10 @@ import {
   Checkbox,
   Dropdown,
   DropdownOption,
+  IconCheckCircle32,
+  IconWarning32,
   Link,
+  LoadingIndicator,
   Modal,
   Muted,
   Text,
@@ -15,6 +18,7 @@ import { h } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 
 import { AIProvider, Settings } from '../types'
+import { validateApiKey, ValidationStatus } from '../services/validation'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -46,6 +50,8 @@ export function SettingsModal({
   const [includeImage, setIncludeImage] = useState(settings.includeImage)
   const [showVariants, setShowVariants] = useState(settings.showVariants)
   const [overwriteExisting, setOverwriteExisting] = useState(settings.overwriteExisting)
+  const [validationStatus, setValidationStatus] = useState<ValidationStatus>('idle')
+  const [validationError, setValidationError] = useState<string | undefined>()
 
   useEffect(() => {
     setProvider(settings.provider)
@@ -55,6 +61,8 @@ export function SettingsModal({
     setIncludeImage(settings.includeImage)
     setShowVariants(settings.showVariants)
     setOverwriteExisting(settings.overwriteExisting)
+    setValidationStatus('idle')
+    setValidationError(undefined)
   }, [settings, isOpen])
 
   function handleSave() {
@@ -72,10 +80,32 @@ export function SettingsModal({
 
   function handleProviderChange(event: h.JSX.TargetedEvent<HTMLInputElement>) {
     setProvider(event.currentTarget.value as AIProvider)
+    // Reset validation status when provider changes
+    setValidationStatus('idle')
+    setValidationError(undefined)
   }
 
   function handleApiKeyChange(newValue: string) {
     setApiKey(newValue)
+    // Reset validation status when key changes
+    if (validationStatus !== 'idle') {
+      setValidationStatus('idle')
+      setValidationError(undefined)
+    }
+  }
+
+  async function handleValidate() {
+    setValidationStatus('validating')
+    setValidationError(undefined)
+
+    const result = await validateApiKey(provider, apiKey)
+
+    if (result.valid) {
+      setValidationStatus('valid')
+    } else {
+      setValidationStatus('invalid')
+      setValidationError(result.error)
+    }
   }
 
   function getProviderHelpText(): string {
@@ -110,17 +140,58 @@ export function SettingsModal({
           <Bold>API Key</Bold>
         </Text>
         <VerticalSpace space="small" />
-        <Textbox
-          placeholder="Enter your API key..."
-          value={apiKey}
-          onValueInput={handleApiKeyChange}
-          password
-        />
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div style={{ flex: 1 }}>
+            <Textbox
+              placeholder="Enter your API key..."
+              value={apiKey}
+              onValueInput={handleApiKeyChange}
+              password
+            />
+          </div>
+          <Button
+            onClick={handleValidate}
+            secondary
+            disabled={!apiKey.trim() || validationStatus === 'validating'}
+          >
+            {validationStatus === 'validating' ? 'Validating...' : 'Validate'}
+          </Button>
+        </div>
 
         <VerticalSpace space="small" />
-        <Text>
-          <Muted>{getProviderHelpText()}</Muted>
-        </Text>
+        {validationStatus === 'validating' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <LoadingIndicator />
+            <Text>
+              <Muted>Checking API key...</Muted>
+            </Text>
+          </div>
+        )}
+        {validationStatus === 'valid' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ color: 'var(--figma-color-text-success, #1BC47D)', display: 'flex', alignItems: 'center' }}>
+              <IconCheckCircle32 />
+            </div>
+            <Text style={{ color: 'var(--figma-color-text-success, #1BC47D)' }}>
+              Valid API key
+            </Text>
+          </div>
+        )}
+        {validationStatus === 'invalid' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ color: 'var(--figma-color-text-danger, #F24822)', display: 'flex', alignItems: 'center' }}>
+              <IconWarning32 />
+            </div>
+            <Text style={{ color: 'var(--figma-color-text-danger, #F24822)' }}>
+              {validationError || 'Invalid API key'}
+            </Text>
+          </div>
+        )}
+        {validationStatus === 'idle' && (
+          <Text>
+            <Muted>{getProviderHelpText()}</Muted>
+          </Text>
+        )}
 
         <VerticalSpace space="large" />
 
