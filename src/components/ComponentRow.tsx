@@ -4,6 +4,11 @@ import { useEffect, useState } from 'preact/hooks'
 
 import { ComponentData } from '../types'
 
+interface RetryStatus {
+  attempt: number
+  maxAttempts: number
+}
+
 interface ComponentRowProps {
   component: ComponentData
   onGenerate: (component: ComponentData) => Promise<string>
@@ -15,6 +20,8 @@ interface ComponentRowProps {
   hasApiKey: boolean
   externalError?: string
   fromCache?: boolean
+  retryStatus?: RetryStatus
+  onCancelRetry: (id: string) => void
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -39,7 +46,9 @@ export function ComponentRow({
   isGenerating,
   hasApiKey,
   externalError,
-  fromCache
+  fromCache,
+  retryStatus,
+  onCancelRetry
 }: ComponentRowProps) {
   const [description, setDescription] = useState(component.currentDescription)
   const [loading, setLoading] = useState(false)
@@ -200,7 +209,35 @@ export function ComponentRow({
             Saving…
           </div>
         )}
-        {lastFromCache !== undefined && !isSaving && !error && !externalError && (
+        {retryStatus && (
+          <div
+            style={{
+              marginTop: '4px',
+              fontSize: '11px',
+              color: 'var(--figma-color-text-warning)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <span>Retrying... attempt {retryStatus.attempt}/{retryStatus.maxAttempts}</span>
+            <button
+              onClick={() => onCancelRetry(component.id)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--figma-color-text-danger)',
+                cursor: 'pointer',
+                padding: '0',
+                fontSize: '11px',
+                textDecoration: 'underline'
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+        {lastFromCache !== undefined && !isSaving && !error && !externalError && !retryStatus && (
           <div
             style={{
               marginTop: '4px',

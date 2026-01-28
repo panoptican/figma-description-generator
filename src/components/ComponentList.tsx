@@ -5,6 +5,11 @@ import { useState } from 'preact/hooks'
 import { ComponentData } from '../types'
 import { ComponentRow } from './ComponentRow'
 
+interface RetryStatus {
+  attempt: number
+  maxAttempts: number
+}
+
 interface ComponentListProps {
   components: ComponentData[]
   onGenerate: (component: ComponentData) => Promise<string>
@@ -15,7 +20,9 @@ interface ComponentListProps {
   hasApiKey: boolean
   rowErrors: Record<string, string | undefined>
   cacheHits: Record<string, boolean>
+  retryStatus: Record<string, RetryStatus | undefined>
   onSelect: (id: string) => void
+  onCancelRetry: (id: string) => void
 }
 
 export function ComponentList({
@@ -28,7 +35,9 @@ export function ComponentList({
   hasApiKey,
   rowErrors,
   cacheHits,
-  onSelect
+  retryStatus,
+  onSelect,
+  onCancelRetry
 }: ComponentListProps) {
   const [collapsedPages, setCollapsedPages] = useState<Set<string>>(new Set())
 
@@ -135,6 +144,8 @@ export function ComponentList({
                   hasApiKey={hasApiKey}
                   externalError={rowErrors[component.id]}
                   fromCache={cacheHits[component.id]}
+                  retryStatus={retryStatus[component.id]}
+                  onCancelRetry={onCancelRetry}
                 />
               ))}
           </div>

@@ -1,4 +1,18 @@
 import { AIProvider } from '../types'
+import { withRetry, RetryError } from '../utils/retry'
+
+export interface GenerateOptions {
+  onRetry?: (attempt: number, maxAttempts: number, error: Error) => void
+  shouldAbort?: () => boolean
+}
+
+export interface GenerateResult {
+  description: string
+  attempts: number
+  fromRetry: boolean
+}
+
+export { RetryError }
 
 export const DEFAULT_PROMPT = `Write a brief description for a design system component.
 
@@ -205,6 +219,63 @@ async function generateWithChatGPT(
   return text.trim()
 }
 
+async function generateDescriptionInternal(
+  provider: AIProvider,
+  apiKey: string,
+  prompt: string,
+  imageBase64?: string
+): Promise<string> {
+  switch (provider) {
+    case 'gemini':
+      return generateWithGemini(apiKey, prompt, imageBase64)
+    case 'claude':
+      return generateWithClaude(apiKey, prompt, imageBase64)
+    case 'chatgpt':
+      return generateWithChatGPT(apiKey, prompt, imageBase64)
+    default:
+      throw new Error(`Unknown provider: ${provider}`)
+  }
+}
+
+/**
+ * Generate description with automatic retry on retryable errors.
+ * Returns extended result with attempt count and retry status.
+ */
+export async function generateDescriptionWithRetry(
+  provider: AIProvider,
+  apiKey: string,
+  componentName: string,
+  componentType: string,
+  properties: string[],
+  parentName?: string,
+  customPrompt?: string,
+  customVariantPrompt?: string,
+  imageBase64?: string,
+  options?: GenerateOptions
+): Promise<GenerateResult> {
+  const prompt = buildPrompt(componentName, componentType, properties, parentName, customPrompt, customVariantPrompt)
+
+  const result = await withRetry(
+    () => generateDescriptionInternal(provider, apiKey, prompt, imageBase64),
+    {
+      maxAttempts: 3,
+      baseDelayMs: 1000,
+      onRetry: options?.onRetry,
+      shouldAbort: options?.shouldAbort
+    }
+  )
+
+  return {
+    description: result.data,
+    attempts: result.attempts,
+    fromRetry: result.fromRetry
+  }
+}
+
+/**
+ * Generate description (legacy interface for backward compatibility).
+ * For retry support, use generateDescriptionWithRetry instead.
+ */
 export async function generateDescription(
   provider: AIProvider,
   apiKey: string,
@@ -217,15 +288,5 @@ export async function generateDescription(
   imageBase64?: string
 ): Promise<string> {
   const prompt = buildPrompt(componentName, componentType, properties, parentName, customPrompt, customVariantPrompt)
-
-  switch (provider) {
-    case 'gemini':
-      return generateWithGemini(apiKey, prompt, imageBase64)
-    case 'claude':
-      return generateWithClaude(apiKey, prompt, imageBase64)
-    case 'chatgpt':
-      return generateWithChatGPT(apiKey, prompt, imageBase64)
-    default:
-      throw new Error(`Unknown provider: ${provider}`)
-  }
+  return generateDescriptionInternal(provider, apiKey, prompt, imageBase64)
 }

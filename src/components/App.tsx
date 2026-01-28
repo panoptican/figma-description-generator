@@ -24,7 +24,7 @@ import {
   SettingsSavedHandler,
   SelectComponentHandler
 } from '../types'
-import { generateDescription, DEFAULT_PROMPT, DEFAULT_VARIANT_PROMPT } from '../services/ai'
+import { generateDescriptionWithRetry, RetryError, DEFAULT_PROMPT, DEFAULT_VARIANT_PROMPT } from '../services/ai'
 import {
   DescriptionCache,
   generateCacheKey,
@@ -61,7 +61,9 @@ export function App({ scope, currentPageName }: AppProps) {
   const [rowErrors, setRowErrors] = useState<Record<string, string | undefined>>({})
   const [cacheHits, setCacheHits] = useState<Record<string, boolean>>({})
   const [cacheSize, setCacheSize] = useState(0)
+  const [retryStatus, setRetryStatus] = useState<Record<string, { attempt: number; maxAttempts: number } | undefined>>({})
   const abortGenerateAllRef = useRef(false)
+  const abortRetryRef = useRef<Record<string, boolean>>({})
   const imageExportResolveRef = useRef<((imageBase64: string | null) => void) | null>(null)
   const cacheRef = useRef(new DescriptionCache())
   const documentIdRef = useRef<string>('')
@@ -226,28 +228,55 @@ export function App({ scope, currentPageName }: AppProps) {
         }
       }
 
-      const description = await generateDescription(
-        settings.provider,
-        settings.apiKey,
-        component.name,
-        component.type,
-        component.properties,
-        component.parentName,
-        settings.customPrompt || undefined,
-        settings.customVariantPrompt || undefined,
-        imageBase64
-      )
+      // Clear any previous retry abort signal
+      abortRetryRef.current[component.id] = false
+      setRetryStatus((prev) => ({ ...prev, [component.id]: undefined }))
 
-      // Store in cache
-      const cacheKey = getCacheKeyForComponent(component, imageBase64)
-      cacheRef.current.set(cacheKey, description)
-      saveCache()
-      setCacheHits((prev) => ({ ...prev, [component.id]: false }))
+      try {
+        const result = await generateDescriptionWithRetry(
+          settings.provider,
+          settings.apiKey,
+          component.name,
+          component.type,
+          component.properties,
+          component.parentName,
+          settings.customPrompt || undefined,
+          settings.customVariantPrompt || undefined,
+          imageBase64,
+          {
+            onRetry: (attempt, maxAttempts) => {
+              setRetryStatus((prev) => ({
+                ...prev,
+                [component.id]: { attempt: attempt + 1, maxAttempts }
+              }))
+            },
+            shouldAbort: () => abortRetryRef.current[component.id] || abortGenerateAllRef.current
+          }
+        )
 
-      return { description, fromCache: false }
+        // Clear retry status on success
+        setRetryStatus((prev) => ({ ...prev, [component.id]: undefined }))
+
+        // Store in cache
+        const cacheKey = getCacheKeyForComponent(component, imageBase64)
+        cacheRef.current.set(cacheKey, result.description)
+        saveCache()
+        setCacheHits((prev) => ({ ...prev, [component.id]: false }))
+
+        return { description: result.description, fromCache: false }
+      } catch (error) {
+        // Clear retry status on failure
+        setRetryStatus((prev) => ({ ...prev, [component.id]: undefined }))
+        throw error
+      }
     },
     [settings, exportComponentImage, getCacheKeyForComponent, saveCache]
   )
+
+  // Cancel retry for a specific component
+  const handleCancelRetry = useCallback((componentId: string) => {
+    abortRetryRef.current[componentId] = true
+  }, [])
 
   // Wrapper for ComponentRow that expects just description string
   const handleGenerateForRow = useCallback(
@@ -451,6 +480,8 @@ export function App({ scope, currentPageName }: AppProps) {
         hasApiKey={!!settings.apiKey}
         rowErrors={rowErrors}
         cacheHits={cacheHits}
+        retryStatus={retryStatus}
+        onCancelRetry={handleCancelRetry}
       />
 
       <SettingsModal
