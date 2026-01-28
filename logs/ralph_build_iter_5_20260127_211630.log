@@ -1,0 +1,25 @@
+All specs are now complete. Here's a summary of what was accomplished in this session:
+
+## Summary
+
+### Spec 031 - Provider Fallback Chain ✅
+- Fixed a failing test in `fallback.test.ts` by removing the `isRetryableError` dependency (fallback should be more conservative than retry)
+- Implementation allows automatic failover to alternative AI providers when the primary fails
+- Auth errors don't trigger fallback; availability errors do
+- Settings UI allows reordering providers and configuring API keys per provider
+- "Generated via {provider}" indicator shows which provider ultimately succeeded
+
+### Spec 040 - Keyboard Shortcuts ✅
+- Created `useKeyboardShortcuts` hook with platform-aware modifier key detection
+- Implemented shortcuts:
+  - `Cmd/Ctrl+Shift+G`: Generate all descriptions
+  - `Cmd/Ctrl+F`: Focus search field  
+  - `Escape`: Close settings/export modal
+- Added shortcut hints in tooltips and placeholders
+- 13 new tests for the keyboard shortcuts utilities
+
+**Commits pushed:**
+1. `3989306` - Add provider fallback chain for automatic failover
+2. `47e6fdd` - Add keyboard shortcuts for common actions
+
+**Test results:** 199 tests passing

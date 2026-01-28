@@ -516,18 +516,12 @@ export function App({ scope, currentPageName }: AppProps) {
         onSettingsClick={() => setIsSettingsOpen(true)}
         onGenerateAllClick={handleGenerateAll}
         onCancelClick={handleCancelGenerateAll}
-        onClearCacheClick={handleClearCache}
         onExportClick={() => setIsExportOpen(true)}
         isGenerating={isGeneratingAll}
         hasApiKey={!!settings.apiKey}
         progress={generateProgress}
-        totalCount={totalDisplayed}
-        missingCount={missingCount}
         generateCount={generateCount}
         exportCount={exportCount}
-        cacheSize={cacheSize}
-        scope={scope}
-        currentPageName={currentPageName}
         searchInputRef={searchInputRef}
       />
 

@@ -1,5 +1,27 @@
 # Repository Guidelines
 
+## Ralph Wiggum (Autonomous Development)
+
+This project uses the Ralph Wiggum autonomous development framework.
+
+**Constitution:** `.specify/memory/constitution.md`
+
+### Quick Start
+
+```bash
+# Run the autonomous loop
+./scripts/ralph-loop.sh
+
+# With iteration limit
+./scripts/ralph-loop.sh 10
+```
+
+### Creating Specs
+
+Add specifications to `specs/` as markdown files. The agent picks the highest priority incomplete spec and implements it.
+
+---
+
 ## Project Structure & Module Organization
 - `src/main.ts` wires Figma command handlers and settings persistence; UI entry sits in `src/ui.tsx`.
 - UI is built from Preact components under `src/components/`; shared types live in `src/types.ts`.

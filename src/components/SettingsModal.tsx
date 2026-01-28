@@ -216,7 +216,12 @@ export function SettingsModal({
 
   return (
     <Modal open={isOpen} onCloseButtonClick={onClose} title="Settings">
-      <div style={{ padding: '16px', width: '480px' }}>
+      <div style={{
+        padding: '16px',
+        width: '480px',
+        maxHeight: 'calc(100vh - 120px)',
+        overflowY: 'auto'
+      }}>
         <Text>
           <Bold>AI Provider</Bold>
         </Text>
