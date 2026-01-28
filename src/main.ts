@@ -37,7 +37,9 @@ const DEFAULT_SETTINGS: Settings = {
   customVariantPrompt: '',
   includeImage: false,
   showVariants: true,
-  overwriteExisting: false
+  overwriteExisting: false,
+  enableFallback: false,
+  providerChain: undefined
 }
 
 type Scope = 'current-page' | 'all-pages'

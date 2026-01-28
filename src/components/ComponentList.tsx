@@ -2,7 +2,7 @@ import { Muted, Text } from '@create-figma-plugin/ui'
 import { h } from 'preact'
 import { useState } from 'preact/hooks'
 
-import { ComponentData } from '../types'
+import { AIProvider, ComponentData } from '../types'
 import { ComponentRow } from './ComponentRow'
 
 interface RetryStatus {
@@ -23,6 +23,7 @@ interface ComponentListProps {
   retryStatus: Record<string, RetryStatus | undefined>
   onSelect: (id: string) => void
   onCancelRetry: (id: string) => void
+  usedProvider: Record<string, AIProvider | undefined>
 }
 
 export function ComponentList({
@@ -37,7 +38,8 @@ export function ComponentList({
   cacheHits,
   retryStatus,
   onSelect,
-  onCancelRetry
+  onCancelRetry,
+  usedProvider
 }: ComponentListProps) {
   const [collapsedPages, setCollapsedPages] = useState<Set<string>>(new Set())
 
@@ -146,6 +148,7 @@ export function ComponentList({
                   fromCache={cacheHits[component.id]}
                   retryStatus={retryStatus[component.id]}
                   onCancelRetry={onCancelRetry}
+                  usedProvider={usedProvider[component.id]}
                 />
               ))}
           </div>

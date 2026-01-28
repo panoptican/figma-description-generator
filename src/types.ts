@@ -14,6 +14,12 @@ export interface ComponentData {
   parentName?: string
 }
 
+export interface ProviderConfig {
+  provider: AIProvider
+  apiKey: string
+  enabled: boolean
+}
+
 export interface Settings {
   provider: AIProvider
   apiKey: string
@@ -22,6 +28,9 @@ export interface Settings {
   includeImage: boolean
   showVariants: boolean
   overwriteExisting: boolean
+  // Fallback chain configuration
+  providerChain?: ProviderConfig[]
+  enableFallback?: boolean
 }
 
 export interface LoadComponentsHandler extends EventHandler {

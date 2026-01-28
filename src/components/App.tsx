@@ -24,7 +24,8 @@ import {
   SettingsSavedHandler,
   SelectComponentHandler
 } from '../types'
-import { generateDescriptionWithRetry, RetryError, DEFAULT_PROMPT, DEFAULT_VARIANT_PROMPT } from '../services/ai'
+import { generateDescriptionWithFallback, RetryError, DEFAULT_PROMPT, DEFAULT_VARIANT_PROMPT, getProviderDisplayName, GenerateWithFallbackResult } from '../services/ai'
+import { AIProvider } from '../types'
 import {
   DescriptionCache,
   generateCacheKey,
@@ -49,7 +50,9 @@ const DEFAULT_SETTINGS: Settings = {
   customVariantPrompt: '',
   includeImage: false,
   showVariants: true,
-  overwriteExisting: false
+  overwriteExisting: false,
+  enableFallback: false,
+  providerChain: undefined
 }
 
 export function App({ scope, currentPageName }: AppProps) {
@@ -65,6 +68,7 @@ export function App({ scope, currentPageName }: AppProps) {
   const [cacheHits, setCacheHits] = useState<Record<string, boolean>>({})
   const [cacheSize, setCacheSize] = useState(0)
   const [retryStatus, setRetryStatus] = useState<Record<string, { attempt: number; maxAttempts: number } | undefined>>({})
+  const [usedProvider, setUsedProvider] = useState<Record<string, AIProvider | undefined>>({})
   const abortGenerateAllRef = useRef(false)
   const abortRetryRef = useRef<Record<string, boolean>>({})
   const imageExportResolveRef = useRef<((imageBase64: string | null) => void) | null>(null)
@@ -214,7 +218,7 @@ export function App({ scope, currentPageName }: AppProps) {
   ).length
 
   const handleGenerate = useCallback(
-    async (component: ComponentData): Promise<{ description: string; fromCache: boolean }> => {
+    async (component: ComponentData): Promise<{ description: string; fromCache: boolean; usedProvider?: AIProvider }> => {
       let imageBase64: string | undefined
 
       if (settings.includeImage) {
@@ -237,9 +241,10 @@ export function App({ scope, currentPageName }: AppProps) {
       // Clear any previous retry abort signal
       abortRetryRef.current[component.id] = false
       setRetryStatus((prev) => ({ ...prev, [component.id]: undefined }))
+      setUsedProvider((prev) => ({ ...prev, [component.id]: undefined }))
 
       try {
-        const result = await generateDescriptionWithRetry(
+        const result = await generateDescriptionWithFallback(
           settings.provider,
           settings.apiKey,
           component.name,
@@ -250,11 +255,16 @@ export function App({ scope, currentPageName }: AppProps) {
           settings.customVariantPrompt || undefined,
           imageBase64,
           {
+            enableFallback: settings.enableFallback,
+            providerChain: settings.providerChain,
             onRetry: (attempt, maxAttempts) => {
               setRetryStatus((prev) => ({
                 ...prev,
                 [component.id]: { attempt: attempt + 1, maxAttempts }
               }))
+            },
+            onProviderAttempt: (provider) => {
+              setUsedProvider((prev) => ({ ...prev, [component.id]: provider }))
             },
             shouldAbort: () => abortRetryRef.current[component.id] || abortGenerateAllRef.current
           }
@@ -263,13 +273,16 @@ export function App({ scope, currentPageName }: AppProps) {
         // Clear retry status on success
         setRetryStatus((prev) => ({ ...prev, [component.id]: undefined }))
 
+        // Track which provider was used
+        setUsedProvider((prev) => ({ ...prev, [component.id]: result.usedProvider }))
+
         // Store in cache
         const cacheKey = getCacheKeyForComponent(component, imageBase64)
         cacheRef.current.set(cacheKey, result.description)
         saveCache()
         setCacheHits((prev) => ({ ...prev, [component.id]: false }))
 
-        return { description: result.description, fromCache: false }
+        return { description: result.description, fromCache: false, usedProvider: result.usedProvider }
       } catch (error) {
         // Clear retry status on failure
         setRetryStatus((prev) => ({ ...prev, [component.id]: undefined }))
@@ -502,6 +515,7 @@ export function App({ scope, currentPageName }: AppProps) {
         cacheHits={cacheHits}
         retryStatus={retryStatus}
         onCancelRetry={handleCancelRetry}
+        usedProvider={usedProvider}
       />
 
       <SettingsModal
