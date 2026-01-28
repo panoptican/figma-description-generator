@@ -14,6 +14,7 @@ interface ComponentListProps {
   isGenerating: boolean
   hasApiKey: boolean
   rowErrors: Record<string, string | undefined>
+  cacheHits: Record<string, boolean>
   onSelect: (id: string) => void
 }
 
@@ -26,6 +27,7 @@ export function ComponentList({
   isGenerating,
   hasApiKey,
   rowErrors,
+  cacheHits,
   onSelect
 }: ComponentListProps) {
   const [collapsedPages, setCollapsedPages] = useState<Set<string>>(new Set())
@@ -132,6 +134,7 @@ export function ComponentList({
                   isGenerating={isGenerating}
                   hasApiKey={hasApiKey}
                   externalError={rowErrors[component.id]}
+                  fromCache={cacheHits[component.id]}
                 />
               ))}
           </div>

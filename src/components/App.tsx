@@ -1,16 +1,22 @@
 import { emit, on } from '@create-figma-plugin/utilities'
 import { h } from 'preact'
-import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 
 import {
   ApplyDescriptionHandler,
+  CacheClearedHandler,
+  CacheData,
+  CacheLoadedHandler,
+  ClearCacheHandler,
   ComponentData,
   ComponentsLoadedHandler,
   DescriptionAppliedHandler,
   ExportImageHandler,
   ImageExportedHandler,
+  LoadCacheHandler,
   LoadComponentsHandler,
   LoadSettingsHandler,
+  SaveCacheHandler,
   SaveSettingsHandler,
   Scope,
   Settings,
@@ -19,6 +25,12 @@ import {
   SelectComponentHandler
 } from '../types'
 import { generateDescription, DEFAULT_PROMPT, DEFAULT_VARIANT_PROMPT } from '../services/ai'
+import {
+  DescriptionCache,
+  generateCacheKey,
+  hashPromptConfig,
+  hashString
+} from '../services/cache'
 import { Header } from './Header'
 import { SettingsModal } from './SettingsModal'
 import { ComponentList } from './ComponentList'
@@ -47,8 +59,12 @@ export function App({ scope, currentPageName }: AppProps) {
   const [isGeneratingAll, setIsGeneratingAll] = useState(false)
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: 0 })
   const [rowErrors, setRowErrors] = useState<Record<string, string | undefined>>({})
+  const [cacheHits, setCacheHits] = useState<Record<string, boolean>>({})
+  const [cacheSize, setCacheSize] = useState(0)
   const abortGenerateAllRef = useRef(false)
   const imageExportResolveRef = useRef<((imageBase64: string | null) => void) | null>(null)
+  const cacheRef = useRef(new DescriptionCache())
+  const documentIdRef = useRef<string>('')
   const CONCURRENCY_LIMIT = 3
 
   // Helper to export component image and wait for result
@@ -58,6 +74,36 @@ export function App({ scope, currentPageName }: AppProps) {
       emit<ExportImageHandler>('EXPORT_IMAGE', { id: componentId })
     })
   }, [])
+
+  // Save cache to storage
+  const saveCache = useCallback(() => {
+    const data: CacheData = {
+      entries: cacheRef.current.export(),
+      documentId: documentIdRef.current
+    }
+    emit<SaveCacheHandler>('SAVE_CACHE', data)
+    setCacheSize(cacheRef.current.size)
+  }, [])
+
+  // Generate cache key for a component
+  const getCacheKeyForComponent = useCallback((
+    component: ComponentData,
+    imageBase64?: string
+  ): string => {
+    const promptHash = hashPromptConfig(
+      settings.customPrompt || DEFAULT_PROMPT,
+      settings.customVariantPrompt || DEFAULT_VARIANT_PROMPT,
+      settings.includeImage
+    )
+    return generateCacheKey({
+      name: component.name,
+      type: component.type,
+      properties: component.properties,
+      parentName: component.parentName,
+      promptHash,
+      imageHash: imageBase64 ? hashString(imageBase64) : undefined
+    })
+  }, [settings.customPrompt, settings.customVariantPrompt, settings.includeImage])
 
   // Load initial data
   useEffect(() => {
@@ -105,7 +151,26 @@ export function App({ scope, currentPageName }: AppProps) {
       }
     )
 
+    const unsubscribeCacheLoaded = on<CacheLoadedHandler>(
+      'CACHE_LOADED',
+      (data: CacheData) => {
+        documentIdRef.current = data.documentId
+        cacheRef.current.load(data.entries)
+        setCacheSize(cacheRef.current.size)
+      }
+    )
+
+    const unsubscribeCacheCleared = on<CacheClearedHandler>(
+      'CACHE_CLEARED',
+      () => {
+        cacheRef.current.clear()
+        setCacheSize(0)
+        setCacheHits({})
+      }
+    )
+
     emit<LoadSettingsHandler>('LOAD_SETTINGS')
+    emit<LoadCacheHandler>('LOAD_CACHE')
     emit<LoadComponentsHandler>('LOAD_COMPONENTS')
 
     return () => {
@@ -114,6 +179,8 @@ export function App({ scope, currentPageName }: AppProps) {
       unsubscribeSettingsSaved()
       unsubscribeDescriptionApplied()
       unsubscribeImageExported()
+      unsubscribeCacheLoaded()
+      unsubscribeCacheCleared()
     }
   }, [])
 
@@ -139,7 +206,7 @@ export function App({ scope, currentPageName }: AppProps) {
   ).length
 
   const handleGenerate = useCallback(
-    async (component: ComponentData): Promise<string> => {
+    async (component: ComponentData): Promise<{ description: string; fromCache: boolean }> => {
       let imageBase64: string | undefined
 
       if (settings.includeImage) {
@@ -149,7 +216,17 @@ export function App({ scope, currentPageName }: AppProps) {
         }
       }
 
-      return generateDescription(
+      // Check cache first (unless overwriteExisting is enabled)
+      if (!settings.overwriteExisting) {
+        const cacheKey = getCacheKeyForComponent(component, imageBase64)
+        const cached = cacheRef.current.get(cacheKey)
+        if (cached) {
+          setCacheHits((prev) => ({ ...prev, [component.id]: true }))
+          return { description: cached.description, fromCache: true }
+        }
+      }
+
+      const description = await generateDescription(
         settings.provider,
         settings.apiKey,
         component.name,
@@ -160,8 +237,25 @@ export function App({ scope, currentPageName }: AppProps) {
         settings.customVariantPrompt || undefined,
         imageBase64
       )
+
+      // Store in cache
+      const cacheKey = getCacheKeyForComponent(component, imageBase64)
+      cacheRef.current.set(cacheKey, description)
+      saveCache()
+      setCacheHits((prev) => ({ ...prev, [component.id]: false }))
+
+      return { description, fromCache: false }
     },
-    [settings, exportComponentImage]
+    [settings, exportComponentImage, getCacheKeyForComponent, saveCache]
+  )
+
+  // Wrapper for ComponentRow that expects just description string
+  const handleGenerateForRow = useCallback(
+    async (component: ComponentData): Promise<string> => {
+      const result = await handleGenerate(component)
+      return result.description
+    },
+    [handleGenerate]
   )
 
   const handleConfirm = useCallback((id: string, description: string) => {
@@ -215,6 +309,10 @@ export function App({ scope, currentPageName }: AppProps) {
     emit<SaveSettingsHandler>('SAVE_SETTINGS', newSettings)
   }, [])
 
+  const handleClearCache = useCallback(() => {
+    emit<ClearCacheHandler>('CLEAR_CACHE')
+  }, [])
+
   const handleGenerateAll = useCallback(async () => {
     if (!settings.apiKey) return
 
@@ -235,37 +333,23 @@ export function App({ scope, currentPageName }: AppProps) {
 
     let completed = 0
     let currentIndex = 0
+    let cacheHitCount = 0
 
     const processComponent = async (component: ComponentData) => {
       if (abortGenerateAllRef.current) return
 
       try {
-        let imageBase64: string | undefined
+        const result = await handleGenerate(component)
 
-        if (settings.includeImage) {
-          const image = await exportComponentImage(component.id)
-          if (image) {
-            imageBase64 = image
-          }
+        if (result.fromCache) {
+          cacheHitCount++
         }
-
-        const description = await generateDescription(
-          settings.provider,
-          settings.apiKey,
-          component.name,
-          component.type,
-          component.properties,
-          component.parentName,
-          settings.customPrompt || undefined,
-          settings.customVariantPrompt || undefined,
-          imageBase64
-        )
 
         if (abortGenerateAllRef.current) return
 
         emit<ApplyDescriptionHandler>('APPLY_DESCRIPTION', {
           id: component.id,
-          description
+          description: result.description
         })
 
         setComponents((prev) =>
@@ -274,7 +358,7 @@ export function App({ scope, currentPageName }: AppProps) {
               ? {
                   ...c,
                   previousDescription: c.currentDescription,
-                  currentDescription: description
+                  currentDescription: result.description
                 }
               : c
           )
@@ -308,7 +392,7 @@ export function App({ scope, currentPageName }: AppProps) {
     setIsGeneratingAll(false)
     setGenerateProgress({ current: 0, total: 0 })
     abortGenerateAllRef.current = false
-  }, [filteredComponents, settings, exportComponentImage])
+  }, [filteredComponents, settings, handleGenerate])
 
   const handleCancelGenerateAll = useCallback(() => {
     abortGenerateAllRef.current = true
@@ -344,19 +428,21 @@ export function App({ scope, currentPageName }: AppProps) {
         onSettingsClick={() => setIsSettingsOpen(true)}
         onGenerateAllClick={handleGenerateAll}
         onCancelClick={handleCancelGenerateAll}
+        onClearCacheClick={handleClearCache}
         isGenerating={isGeneratingAll}
         hasApiKey={!!settings.apiKey}
         progress={generateProgress}
         totalCount={totalDisplayed}
         missingCount={missingCount}
         generateCount={generateCount}
+        cacheSize={cacheSize}
         scope={scope}
         currentPageName={currentPageName}
       />
 
       <ComponentList
         components={filteredComponents}
-        onGenerate={handleGenerate}
+        onGenerate={handleGenerateForRow}
         onConfirm={handleConfirm}
         onReject={handleReject}
         onRevert={handleRevert}
@@ -364,6 +450,7 @@ export function App({ scope, currentPageName }: AppProps) {
         isGenerating={isGeneratingAll}
         hasApiKey={!!settings.apiKey}
         rowErrors={rowErrors}
+        cacheHits={cacheHits}
       />
 
       <SettingsModal

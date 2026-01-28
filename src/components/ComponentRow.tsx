@@ -14,6 +14,7 @@ interface ComponentRowProps {
   isGenerating: boolean
   hasApiKey: boolean
   externalError?: string
+  fromCache?: boolean
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -37,19 +38,27 @@ export function ComponentRow({
   onSelect,
   isGenerating,
   hasApiKey,
-  externalError
+  externalError,
+  fromCache
 }: ComponentRowProps) {
   const [description, setDescription] = useState(component.currentDescription)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isDirty, setIsDirty] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [lastFromCache, setLastFromCache] = useState<boolean | undefined>(undefined)
 
   useEffect(() => {
     setDescription(component.currentDescription)
     setIsDirty(false)
     setIsSaving(false)
   }, [component.currentDescription])
+
+  useEffect(() => {
+    if (fromCache !== undefined) {
+      setLastFromCache(fromCache)
+    }
+  }, [fromCache])
 
   useEffect(() => {
     if (!isDirty || description === component.currentDescription) {
@@ -70,6 +79,7 @@ export function ComponentRow({
   async function handleGenerate() {
     setLoading(true)
     setError(null)
+    setLastFromCache(undefined)
     try {
       const newDescription = await onGenerate(component)
       setDescription(newDescription)
@@ -162,6 +172,7 @@ export function ComponentRow({
             setDescription((e.target as HTMLTextAreaElement).value)
             setIsDirty(true)
             setError(null)
+            setLastFromCache(undefined)
           }}
           rows={4}
           placeholder="Enter description..."
@@ -187,6 +198,18 @@ export function ComponentRow({
         {isSaving && (
           <div style={{ color: 'var(--figma-color-text-secondary)', marginTop: '4px', fontSize: '11px' }}>
             Saving…
+          </div>
+        )}
+        {lastFromCache !== undefined && !isSaving && !error && !externalError && (
+          <div
+            style={{
+              marginTop: '4px',
+              fontSize: '11px',
+              color: lastFromCache ? 'var(--figma-color-text-secondary)' : 'var(--figma-color-text-success)'
+            }}
+            title={lastFromCache ? 'Description was retrieved from cache' : 'Description was freshly generated'}
+          >
+            {lastFromCache ? 'From cache' : 'Generated'}
           </div>
         )}
       </div>

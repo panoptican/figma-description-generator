@@ -9,12 +9,14 @@ interface HeaderProps {
   onSettingsClick: () => void
   onGenerateAllClick: () => void
   onCancelClick: () => void
+  onClearCacheClick: () => void
   isGenerating: boolean
   hasApiKey: boolean
   progress: { current: number; total: number }
   totalCount: number
   missingCount: number
   generateCount: number
+  cacheSize: number
   scope: Scope
   currentPageName: string
 }
@@ -25,12 +27,14 @@ export function Header({
   onSettingsClick,
   onGenerateAllClick,
   onCancelClick,
+  onClearCacheClick,
   isGenerating,
   hasApiKey,
   progress,
   totalCount,
   missingCount,
   generateCount,
+  cacheSize,
   scope,
   currentPageName
 }: HeaderProps) {
@@ -120,9 +124,33 @@ export function Header({
               onValueInput={onSearchChange}
             />
           </div>
-          <Text style={{ fontSize: '11px' }}>
-            <Muted>Generate All respects search and filters.</Muted>
-          </Text>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <Text style={{ fontSize: '11px' }}>
+              <Muted>Generate All respects search and filters.</Muted>
+            </Text>
+            {cacheSize > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Text style={{ fontSize: '11px', color: 'var(--figma-color-text-secondary)' }}>
+                  {cacheSize} cached
+                </Text>
+                <button
+                  onClick={onClearCacheClick}
+                  style={{
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--figma-color-border)',
+                    backgroundColor: 'var(--figma-color-bg)',
+                    color: 'var(--figma-color-text-secondary)',
+                    fontSize: '10px',
+                    cursor: 'pointer'
+                  }}
+                  title="Clear cached descriptions"
+                >
+                  Clear cache
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

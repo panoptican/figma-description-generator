@@ -8,14 +8,21 @@ import {
 
 import {
   ApplyDescriptionHandler,
+  CacheClearedHandler,
+  CacheData,
+  CacheLoadedHandler,
+  CacheSavedHandler,
+  ClearCacheHandler,
   ClosePluginHandler,
   ComponentData,
   ComponentsLoadedHandler,
   DescriptionAppliedHandler,
   ExportImageHandler,
   ImageExportedHandler,
+  LoadCacheHandler,
   LoadComponentsHandler,
   LoadSettingsHandler,
+  SaveCacheHandler,
   SaveSettingsHandler,
   SelectComponentHandler,
   Settings,
@@ -184,6 +191,43 @@ function initPlugin(scope: Scope) {
     } catch (error) {
       console.error('Failed to export image:', error)
       emit<ImageExportedHandler>('IMAGE_EXPORTED', { id, imageBase64: null })
+    }
+  })
+
+  // Cache handlers using Figma's clientStorage
+  const CACHE_KEY = 'description-cache'
+  const documentId = figma.root.id
+
+  on<LoadCacheHandler>('LOAD_CACHE', async () => {
+    try {
+      const stored = await figma.clientStorage.getAsync(CACHE_KEY) as CacheData | undefined
+      // Only use cache if it's for the same document
+      if (stored && stored.documentId === documentId) {
+        emit<CacheLoadedHandler>('CACHE_LOADED', stored)
+      } else {
+        emit<CacheLoadedHandler>('CACHE_LOADED', { entries: {}, documentId })
+      }
+    } catch (error) {
+      console.error('Failed to load cache:', error)
+      emit<CacheLoadedHandler>('CACHE_LOADED', { entries: {}, documentId })
+    }
+  })
+
+  on<SaveCacheHandler>('SAVE_CACHE', async (data: CacheData) => {
+    try {
+      await figma.clientStorage.setAsync(CACHE_KEY, { ...data, documentId })
+      emit<CacheSavedHandler>('CACHE_SAVED')
+    } catch (error) {
+      console.error('Failed to save cache:', error)
+    }
+  })
+
+  on<ClearCacheHandler>('CLEAR_CACHE', async () => {
+    try {
+      await figma.clientStorage.setAsync(CACHE_KEY, { entries: {}, documentId })
+      emit<CacheClearedHandler>('CACHE_CLEARED')
+    } catch (error) {
+      console.error('Failed to clear cache:', error)
     }
   })
 
