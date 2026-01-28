@@ -31,8 +31,10 @@ import {
   hashPromptConfig,
   hashString
 } from '../services/cache'
+import { exportDescriptions, ExportFormat } from '../utils/export'
 import { Header } from './Header'
 import { SettingsModal } from './SettingsModal'
+import { ExportModal } from './ExportModal'
 import { ComponentList } from './ComponentList'
 
 interface AppProps {
@@ -55,6 +57,7 @@ export function App({ scope, currentPageName }: AppProps) {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [searchValue, setSearchValue] = useState('')
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isExportOpen, setIsExportOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isGeneratingAll, setIsGeneratingAll] = useState(false)
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: 0 })
@@ -206,6 +209,9 @@ export function App({ scope, currentPageName }: AppProps) {
   const generateCount = filteredComponents.filter(
     (c) => settings.overwriteExisting || !c.currentDescription
   ).length
+  const exportCount = filteredComponents.filter(
+    (c) => c.currentDescription && c.currentDescription.trim().length > 0
+  ).length
 
   const handleGenerate = useCallback(
     async (component: ComponentData): Promise<{ description: string; fromCache: boolean }> => {
@@ -342,6 +348,18 @@ export function App({ scope, currentPageName }: AppProps) {
     emit<ClearCacheHandler>('CLEAR_CACHE')
   }, [])
 
+  const handleExport = useCallback((format: ExportFormat) => {
+    const { dataURL, filename } = exportDescriptions(filteredComponents, format)
+
+    // Create a temporary link element to trigger download
+    const link = document.createElement('a')
+    link.href = dataURL
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }, [filteredComponents])
+
   const handleGenerateAll = useCallback(async () => {
     if (!settings.apiKey) return
 
@@ -458,12 +476,14 @@ export function App({ scope, currentPageName }: AppProps) {
         onGenerateAllClick={handleGenerateAll}
         onCancelClick={handleCancelGenerateAll}
         onClearCacheClick={handleClearCache}
+        onExportClick={() => setIsExportOpen(true)}
         isGenerating={isGeneratingAll}
         hasApiKey={!!settings.apiKey}
         progress={generateProgress}
         totalCount={totalDisplayed}
         missingCount={missingCount}
         generateCount={generateCount}
+        exportCount={exportCount}
         cacheSize={cacheSize}
         scope={scope}
         currentPageName={currentPageName}
@@ -491,6 +511,13 @@ export function App({ scope, currentPageName }: AppProps) {
         onSave={handleSaveSettings}
         defaultPrompt={DEFAULT_PROMPT}
         defaultVariantPrompt={DEFAULT_VARIANT_PROMPT}
+      />
+
+      <ExportModal
+        isOpen={isExportOpen}
+        exportCount={exportCount}
+        onClose={() => setIsExportOpen(false)}
+        onExport={handleExport}
       />
     </div>
   )
