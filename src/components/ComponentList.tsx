@@ -66,6 +66,22 @@ export function ComponentList({
     })
   }
 
+  function handleExpandAllInPage(pageComponents: ComponentData[]) {
+    setExpandedRows((prev) => {
+      const next = new Set(prev)
+      pageComponents.forEach(c => next.add(c.id))
+      return next
+    })
+  }
+
+  function handleCollapseAllInPage(pageComponents: ComponentData[]) {
+    setExpandedRows((prev) => {
+      const next = new Set(prev)
+      pageComponents.forEach(c => next.delete(c.id))
+      return next
+    })
+  }
+
   // Group components by page
   const componentsByPage = components.reduce((acc, component) => {
     if (!acc[component.pageName]) {
@@ -83,57 +99,96 @@ export function ComponentList({
         const totalCount = pageComponents.length
         const isComplete = completedCount === totalCount
 
+        // Check if all rows in this page are expanded
+        const allRowsExpanded = pageComponents.every(c => expandedRows.has(c.id))
+        const anyRowsExpanded = pageComponents.some(c => expandedRows.has(c.id))
+
         return (
           <div key={pageName}>
             {/* Page header */}
             <div
-              onClick={() =>
-                setCollapsedPages((prev) => {
-                  const next = new Set(prev)
-                  next.has(pageName) ? next.delete(pageName) : next.add(pageName)
-                  return next
-                })
-              }
               style={{
                 padding: '8px 16px',
                 backgroundColor: 'var(--figma-color-bg-secondary)',
                 borderBottom: '1px solid var(--figma-color-border)',
-                cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
                 userSelect: 'none'
               }}
             >
-              <span
+              {/* Clickable area for collapse/expand page */}
+              <div
+                onClick={() =>
+                  setCollapsedPages((prev) => {
+                    const next = new Set(prev)
+                    next.has(pageName) ? next.delete(pageName) : next.add(pageName)
+                    return next
+                  })
+                }
                 style={{
-                  display: 'inline-block',
-                  transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.15s ease',
-                  fontSize: '10px',
-                  color: 'var(--figma-color-text-secondary)'
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer',
+                  flex: 1
                 }}
               >
-                ▼
-              </span>
-              <Text>
-                <Text style={{ fontWeight: 600 }}>Page: {pageName}</Text>
-              </Text>
-              <Text>
                 <span
                   style={{
-                    color: isComplete
-                      ? 'var(--figma-color-text-success)'
-                      : completedCount > 0
-                        ? 'var(--figma-color-text-warning)'
-                        : 'var(--figma-color-text-secondary)'
+                    display: 'inline-block',
+                    transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.15s ease',
+                    fontSize: '10px',
+                    color: 'var(--figma-color-text-secondary)'
                   }}
                 >
-                  ({completedCount}/{totalCount})
+                  ▼
                 </span>
-              </Text>
-              {isComplete && (
-                <span style={{ color: 'var(--figma-color-text-success)', marginLeft: 'auto' }}>✓</span>
+                <Text>
+                  <Text style={{ fontWeight: 600 }}>Page: {pageName}</Text>
+                </Text>
+                <Text>
+                  <span
+                    style={{
+                      color: isComplete
+                        ? 'var(--figma-color-text-success)'
+                        : completedCount > 0
+                          ? 'var(--figma-color-text-warning)'
+                          : 'var(--figma-color-text-secondary)'
+                    }}
+                  >
+                    ({completedCount}/{totalCount})
+                  </span>
+                </Text>
+              </div>
+
+              {/* Expand All / Collapse All button or checkmark */}
+              {isComplete ? (
+                <span style={{ color: 'var(--figma-color-text-success)' }}>✓</span>
+              ) : !isCollapsed && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (allRowsExpanded) {
+                      handleCollapseAllInPage(pageComponents)
+                    } else {
+                      handleExpandAllInPage(pageComponents)
+                    }
+                  }}
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--figma-color-border)',
+                    backgroundColor: 'transparent',
+                    color: 'var(--figma-color-text-secondary)',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {allRowsExpanded ? 'Collapse All' : 'Expand All'}
+                </button>
               )}
             </div>
 

@@ -54,13 +54,13 @@ As a designer, I want to work through my document page by page, expanding all co
 - "Expand All" button is subtle/secondary style
 
 ## Acceptance Criteria
-- [ ] Page header shows completion count as "(done/total)"
-- [ ] Count is color-coded: amber/red if incomplete, green if complete
-- [ ] "Expand All" button appears on page header
-- [ ] Clicking "Expand All" expands all component rows in that page
-- [ ] Button changes to "Collapse All" when components are expanded
-- [ ] Pages with 100% completion show checkmark instead of button
-- [ ] Clicking page name or triangle toggles component list visibility
+- [x] Page header shows completion count as "(done/total)"
+- [x] Count is color-coded: amber/red if incomplete, green if complete
+- [x] "Expand All" button appears on page header
+- [x] Clicking "Expand All" expands all component rows in that page
+- [x] Button changes to "Collapse All" when components are expanded
+- [x] Pages with 100% completion show checkmark instead of button
+- [x] Clicking page name or triangle toggles component list visibility
 
 ## Technical Notes
 - Track expanded state per-page in ComponentList or App
@@ -68,4 +68,12 @@ As a designer, I want to work through my document page by page, expanding all co
 - "Expand All" sets all component IDs in that page to expanded
 - Consider performance with many components (virtualization may help later)
 
-## Status: INCOMPLETE
+## Implementation Notes
+- Expanded state tracked via `expandedRows` Set in ComponentList
+- `handleExpandAllInPage` adds all component IDs from a page to the Set
+- `handleCollapseAllInPage` removes all component IDs from a page
+- Button text toggles based on `allRowsExpanded` boolean
+- Expand All button hidden when page is collapsed (isCollapsed)
+- Checkmark shown for 100% complete pages, button shown otherwise
+
+## Status: COMPLETE
