@@ -53,17 +53,17 @@ As a designer auditing my component descriptions, I want to see many components 
 - **Collapse**: Click outside, press Escape, or click the row header area
 
 ## Acceptance Criteria
-- [ ] Collapsed rows are single-line, ~36px height
-- [ ] Component name displayed on left
-- [ ] Description preview (truncated) displayed if exists
-- [ ] Empty rows have subtle amber background tint
-- [ ] Clicking a row expands it inline
-- [ ] Expanded row shows type and properties as muted text (no badge)
-- [ ] Expanded row has 2-line textarea
-- [ ] Status text appears left of action buttons
-- [ ] Generate and Revert buttons right-aligned
-- [ ] Clicking outside or pressing Escape collapses the row
-- [ ] Only one row can be expanded at a time (optional - discuss)
+- [x] Collapsed rows are single-line, ~36px height
+- [x] Component name displayed on left
+- [x] Description preview (truncated) displayed if exists
+- [x] Empty rows have subtle amber background tint
+- [x] Clicking a row expands it inline
+- [x] Expanded row shows type and properties as muted text (no badge)
+- [x] Expanded row has 2-line textarea
+- [x] Status text appears left of action buttons
+- [x] Generate and Revert buttons right-aligned
+- [x] Clicking outside or pressing Escape collapses the row
+- [x] Only one row can be expanded at a time (optional - discuss)
 
 ## Technical Notes
 - Add `expanded` state to ComponentRow or manage in parent
@@ -76,4 +76,13 @@ As a designer auditing my component descriptions, I want to see many components 
 - **Multiple rows can be expanded at once** - allows comparing descriptions side by side
 - Keyboard shortcut to expand/collapse: nice to have, not required for initial implementation
 
-## Status: INCOMPLETE
+## Implementation Notes
+- Expanded state managed in ComponentList via `expandedRows` Set
+- Collapsed rows: 36px height, name on left, truncated description preview, chevron indicator
+- Empty rows: amber background `rgba(251, 191, 36, 0.08)`, darker on hover
+- Expanded rows: secondary background, name header, type/properties as muted text, 2-line textarea
+- Escape key collapses expanded row via document keydown listener
+- Removed column headers (Layer Name, Description, Actions) - not needed with new design
+- Removed TYPE_COLORS badge in favor of text-based type display
+
+## Status: COMPLETE

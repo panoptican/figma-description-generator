@@ -42,6 +42,7 @@ export function ComponentList({
   usedProvider
 }: ComponentListProps) {
   const [collapsedPages, setCollapsedPages] = useState<Set<string>>(new Set())
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
   if (components.length === 0) {
     return (
@@ -53,47 +54,38 @@ export function ComponentList({
     )
   }
 
+  function handleToggleExpand(id: string) {
+    setExpandedRows((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  // Group components by page
+  const componentsByPage = components.reduce((acc, component) => {
+    if (!acc[component.pageName]) {
+      acc[component.pageName] = []
+    }
+    acc[component.pageName].push(component)
+    return acc
+  }, {} as Record<string, ComponentData[]>)
+
   return (
     <div style={{ flex: 1, overflow: 'auto', position: 'relative', zIndex: 0 }}>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '260px 1fr 160px',
-          gap: '16px',
-          padding: '8px 16px',
-          borderBottom: '1px solid var(--figma-color-border)',
-          backgroundColor: 'var(--figma-color-bg)',
-          position: 'sticky',
-          top: 0,
-          zIndex: 2,
-          height: '33px',
-          boxSizing: 'border-box',
-          alignItems: 'center'
-        }}
-      >
-        <Text>
-          <Muted>Layer Name</Muted>
-        </Text>
-        <Text>
-          <Muted>Description</Muted>
-        </Text>
-        <Text>
-          <Muted>Actions</Muted>
-        </Text>
-      </div>
-
-      {Object.entries(
-        components.reduce((acc, component) => {
-          if (!acc[component.pageName]) {
-            acc[component.pageName] = []
-          }
-          acc[component.pageName].push(component)
-          return acc
-        }, {} as Record<string, ComponentData[]>)
-      ).map(([pageName, pageComponents]) => {
+      {Object.entries(componentsByPage).map(([pageName, pageComponents]) => {
         const isCollapsed = collapsedPages.has(pageName)
+        const completedCount = pageComponents.filter(c => !!c.currentDescription).length
+        const totalCount = pageComponents.length
+        const isComplete = completedCount === totalCount
+
         return (
           <div key={pageName}>
+            {/* Page header */}
             <div
               onClick={() =>
                 setCollapsedPages((prev) => {
@@ -128,10 +120,24 @@ export function ComponentList({
                 <Text style={{ fontWeight: 600 }}>Page: {pageName}</Text>
               </Text>
               <Text>
-                <Muted>({pageComponents.length})</Muted>
+                <span
+                  style={{
+                    color: isComplete
+                      ? 'var(--figma-color-text-success)'
+                      : completedCount > 0
+                        ? 'var(--figma-color-text-warning)'
+                        : 'var(--figma-color-text-secondary)'
+                  }}
+                >
+                  ({completedCount}/{totalCount})
+                </span>
               </Text>
+              {isComplete && (
+                <span style={{ color: 'var(--figma-color-text-success)', marginLeft: 'auto' }}>✓</span>
+              )}
             </div>
 
+            {/* Component rows */}
             {!isCollapsed &&
               pageComponents.map((component) => (
                 <ComponentRow
@@ -149,6 +155,8 @@ export function ComponentList({
                   retryStatus={retryStatus[component.id]}
                   onCancelRetry={onCancelRetry}
                   usedProvider={usedProvider[component.id]}
+                  isExpanded={expandedRows.has(component.id)}
+                  onToggleExpand={handleToggleExpand}
                 />
               ))}
           </div>

@@ -1,6 +1,6 @@
 import { Button, Text } from '@create-figma-plugin/ui'
 import { Fragment, h } from 'preact'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 
 import { AIProvider, ComponentData } from '../types'
 import { getProviderDisplayName } from '../services/ai'
@@ -24,18 +24,20 @@ interface ComponentRowProps {
   retryStatus?: RetryStatus
   onCancelRetry: (id: string) => void
   usedProvider?: AIProvider
-}
-
-const TYPE_COLORS: Record<string, string> = {
-  COMPONENT: '#9747FF',
-  COMPONENT_SET: '#9747FF',
-  VARIANT: '#6B7280'
+  isExpanded: boolean
+  onToggleExpand: (id: string) => void
 }
 
 const TYPE_LABELS: Record<string, string> = {
-  COMPONENT: 'COMPONENT',
-  COMPONENT_SET: 'COMPONENT_SET',
-  VARIANT: 'VARIANT'
+  COMPONENT: 'Component',
+  COMPONENT_SET: 'Component Set',
+  VARIANT: 'Variant'
+}
+
+function truncateDescription(text: string | undefined, maxLength: number = 60): string {
+  if (!text) return ''
+  if (text.length <= maxLength) return text
+  return text.slice(0, maxLength).trim() + '...'
 }
 
 export function ComponentRow({
@@ -51,7 +53,9 @@ export function ComponentRow({
   fromCache,
   retryStatus,
   onCancelRetry,
-  usedProvider
+  usedProvider,
+  isExpanded,
+  onToggleExpand
 }: ComponentRowProps) {
   const [description, setDescription] = useState(component.currentDescription)
   const [loading, setLoading] = useState(false)
@@ -60,6 +64,7 @@ export function ComponentRow({
   const [isSaving, setIsSaving] = useState(false)
   const [lastFromCache, setLastFromCache] = useState<boolean | undefined>(undefined)
   const [lastUsedProvider, setLastUsedProvider] = useState<AIProvider | undefined>(undefined)
+  const rowRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setDescription(component.currentDescription)
@@ -93,7 +98,22 @@ export function ComponentRow({
     return () => clearTimeout(timeout)
   }, [description, isDirty, component.currentDescription, component.id, onConfirm])
 
+  // Handle Escape key to collapse
+  useEffect(() => {
+    if (!isExpanded) return
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        onToggleExpand(component.id)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isExpanded, component.id, onToggleExpand])
+
   const hasDescription = !!component.currentDescription
+  const isEmpty = !hasDescription
 
   async function handleGenerate() {
     setLoading(true)
@@ -109,183 +129,282 @@ export function ComponentRow({
     }
   }
 
-  function handleConfirm() {
-    onConfirm(component.id, description)
-  }
-
-  function handleReject() {
-    setDescription(component.currentDescription)
-    onReject(component.id)
-    setIsDirty(false)
-  }
-
-  function handleNameClick() {
+  function handleNameClick(e: MouseEvent) {
+    e.stopPropagation()
     onSelect(component.id)
   }
 
+  function handleRowClick() {
+    onToggleExpand(component.id)
+  }
+
+  // Build properties string for expanded view
+  const propertiesStr = component.properties.length > 0 ? component.properties.join(', ') : ''
+  const typeAndProps = propertiesStr
+    ? `${TYPE_LABELS[component.type]} · ${propertiesStr}`
+    : TYPE_LABELS[component.type]
+
+  // Status text for expanded view
+  const getStatusText = () => {
+    if (isSaving) return 'Saving...'
+    if (error || externalError) return null
+    if (retryStatus) return null
+    if (lastFromCache === true) return 'From cache'
+    if (lastFromCache === false) {
+      return lastUsedProvider
+        ? `Generated via ${getProviderDisplayName(lastUsedProvider)}`
+        : 'Generated'
+    }
+    return null
+  }
+
+  // Collapsed state - single line
+  if (!isExpanded) {
+    return (
+      <div
+        ref={rowRef}
+        onClick={handleRowClick}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '8px 16px',
+          height: '36px',
+          boxSizing: 'border-box',
+          borderBottom: '1px solid var(--figma-color-border)',
+          cursor: 'pointer',
+          backgroundColor: isEmpty ? 'rgba(251, 191, 36, 0.08)' : 'transparent',
+          transition: 'background-color 0.15s'
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLElement).style.backgroundColor = isEmpty
+            ? 'rgba(251, 191, 36, 0.15)'
+            : 'var(--figma-color-bg-hover)'
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLElement).style.backgroundColor = isEmpty
+            ? 'rgba(251, 191, 36, 0.08)'
+            : 'transparent'
+        }}
+      >
+        {/* Component name */}
+        <span
+          onClick={handleNameClick}
+          style={{
+            color: 'var(--figma-color-text)',
+            fontSize: '12px',
+            fontWeight: 500,
+            flexShrink: 0,
+            maxWidth: '200px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }}
+          title={component.name}
+        >
+          {component.name}
+        </span>
+
+        {/* Description preview */}
+        <span
+          style={{
+            flex: 1,
+            color: 'var(--figma-color-text-secondary)',
+            fontSize: '12px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            minWidth: 0
+          }}
+        >
+          {truncateDescription(component.currentDescription)}
+        </span>
+
+        {/* Expand indicator */}
+        <span
+          style={{
+            color: 'var(--figma-color-text-tertiary)',
+            fontSize: '12px',
+            flexShrink: 0
+          }}
+        >
+          ›
+        </span>
+      </div>
+    )
+  }
+
+  // Expanded state - full details
   return (
     <div
+      ref={rowRef}
       style={{
-        display: 'grid',
-        gridTemplateColumns: '260px 1fr 160px',
-        gap: '16px',
         padding: '12px 16px',
         borderBottom: '1px solid var(--figma-color-border)',
-        alignItems: 'start'
+        backgroundColor: 'var(--figma-color-bg-secondary)'
       }}
     >
+      {/* Header row - name and collapse indicator */}
       <div
-        onClick={handleNameClick}
-        style={{ cursor: 'pointer' }}
-        title="Click to select in canvas"
+        onClick={handleRowClick}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          cursor: 'pointer',
+          marginBottom: '4px'
+        }}
       >
+        <span
+          onClick={handleNameClick}
+          style={{
+            color: 'var(--figma-color-text)',
+            fontSize: '13px',
+            fontWeight: 600
+          }}
+          title="Click to select in canvas"
+        >
+          {component.name}
+        </span>
+        <span
+          style={{
+            color: 'var(--figma-color-text-tertiary)',
+            fontSize: '12px',
+            transform: 'rotate(90deg)'
+          }}
+        >
+          ›
+        </span>
+      </div>
+
+      {/* Type and properties as muted text */}
+      <div
+        style={{
+          color: 'var(--figma-color-text-secondary)',
+          fontSize: '11px',
+          marginBottom: '8px'
+        }}
+      >
+        {typeAndProps}
+      </div>
+
+      {/* Textarea - 2 lines default */}
+      <textarea
+        value={description}
+        onInput={(e) => {
+          setDescription((e.target as HTMLTextAreaElement).value)
+          setIsDirty(true)
+          setError(null)
+          setLastFromCache(undefined)
+        }}
+        onClick={(e) => e.stopPropagation()}
+        rows={2}
+        placeholder="Enter description..."
+        style={{
+          width: '100%',
+          padding: '8px',
+          border: '1px solid var(--figma-color-border)',
+          borderRadius: '4px',
+          backgroundColor: 'var(--figma-color-bg)',
+          color: 'var(--figma-color-text)',
+          fontFamily: 'Inter, sans-serif',
+          fontSize: '12px',
+          lineHeight: '16px',
+          resize: 'vertical',
+          boxSizing: 'border-box'
+        }}
+      />
+
+      {/* Error display */}
+      {(error || externalError) && (
+        <div style={{ color: 'var(--figma-color-text-danger)', marginTop: '4px', fontSize: '11px' }}>
+          {error || externalError}
+        </div>
+      )}
+
+      {/* Retry status */}
+      {retryStatus && (
         <div
           style={{
-            display: 'inline-block',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            backgroundColor: TYPE_COLORS[component.type],
-            color: 'white',
-            fontSize: '10px',
-            fontWeight: 600,
-            marginBottom: '4px'
+            marginTop: '4px',
+            fontSize: '11px',
+            color: 'var(--figma-color-text-warning)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
           }}
         >
-          {TYPE_LABELS[component.type]}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span
+          <span>Retrying... attempt {retryStatus.attempt}/{retryStatus.maxAttempts}</span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onCancelRetry(component.id)
+            }}
             style={{
-              color: 'var(--figma-color-text-brand)',
-              fontSize: '12px',
-              textDecoration: 'underline',
-              textDecorationColor: 'transparent',
-              transition: 'text-decoration-color 0.15s'
-            }}
-            onMouseEnter={(e) => {
-              (e.target as HTMLElement).style.textDecorationColor = 'var(--figma-color-text-brand)'
-            }}
-            onMouseLeave={(e) => {
-              (e.target as HTMLElement).style.textDecorationColor = 'transparent'
+              background: 'none',
+              border: 'none',
+              color: 'var(--figma-color-text-danger)',
+              cursor: 'pointer',
+              padding: '0',
+              fontSize: '11px',
+              textDecoration: 'underline'
             }}
           >
-            {component.name}
-          </span>
-          {hasDescription && <span style={{ color: 'var(--figma-color-text-success)' }}>✓</span>}
+            Cancel
+          </button>
         </div>
-        {component.properties.length > 0 && (
-          <div style={{ marginTop: '4px', fontSize: '11px' }}>
-            <Text>
-              <span style={{ color: 'var(--figma-color-text-secondary)' }}>
-                {component.properties.join(' | ')}
-              </span>
-            </Text>
-          </div>
-        )}
-      </div>
+      )}
 
-      <div style={{ minWidth: 0 }}>
-        <textarea
-          value={description}
-          onInput={(e) => {
-            setDescription((e.target as HTMLTextAreaElement).value)
-            setIsDirty(true)
-            setError(null)
-            setLastFromCache(undefined)
-          }}
-          rows={4}
-          placeholder="Enter description..."
+      {/* Footer row - status text left, buttons right */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginTop: '8px',
+          gap: '12px'
+        }}
+      >
+        {/* Status text */}
+        <div
           style={{
-            width: '100%',
-            padding: '10px',
-            border: '1px solid var(--figma-color-border)',
-            borderRadius: '6px',
-            backgroundColor: 'var(--figma-color-bg)',
-            color: 'var(--figma-color-text)',
-            fontFamily: 'Inter, sans-serif',
-            fontSize: '12px',
-            lineHeight: '16px',
-            resize: 'vertical',
-            boxSizing: 'border-box'
+            fontSize: '11px',
+            color: isSaving
+              ? 'var(--figma-color-text-secondary)'
+              : lastFromCache === true
+                ? 'var(--figma-color-text-secondary)'
+                : 'var(--figma-color-text-success)',
+            flex: 1
           }}
-        />
-        {(error || externalError) && (
-          <div style={{ color: 'var(--figma-color-text-danger)', marginTop: '4px', fontSize: '11px' }}>
-            {error || externalError}
-          </div>
-        )}
-        {isSaving && (
-          <div style={{ color: 'var(--figma-color-text-secondary)', marginTop: '4px', fontSize: '11px' }}>
-            Saving…
-          </div>
-        )}
-        {retryStatus && (
-          <div
-            style={{
-              marginTop: '4px',
-              fontSize: '11px',
-              color: 'var(--figma-color-text-warning)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-          >
-            <span>Retrying... attempt {retryStatus.attempt}/{retryStatus.maxAttempts}</span>
-            <button
-              onClick={() => onCancelRetry(component.id)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--figma-color-text-danger)',
-                cursor: 'pointer',
-                padding: '0',
-                fontSize: '11px',
-                textDecoration: 'underline'
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-        {lastFromCache !== undefined && !isSaving && !error && !externalError && !retryStatus && (
-          <div
-            style={{
-              marginTop: '4px',
-              fontSize: '11px',
-              color: lastFromCache ? 'var(--figma-color-text-secondary)' : 'var(--figma-color-text-success)'
-            }}
-            title={lastFromCache ? 'Description was retrieved from cache' : `Description was generated by ${lastUsedProvider ? getProviderDisplayName(lastUsedProvider) : 'AI'}`}
-          >
-            {lastFromCache ? 'From cache' : (
-              <Fragment>
-                Generated
-                {lastUsedProvider && <span style={{ marginLeft: '4px', opacity: 0.7 }}>via {getProviderDisplayName(lastUsedProvider)}</span>}
-              </Fragment>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'stretch' }}>
-        <Button
-          onClick={handleGenerate}
-          disabled={loading || isGenerating || !hasApiKey}
-          loading={loading}
-          fullWidth
-          style={{ justifyContent: 'center' }}
         >
-          Generate
-        </Button>
+          {getStatusText()}
+        </div>
 
-        {component.previousDescription && (
+        {/* Action buttons */}
+        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
           <Button
-            onClick={() => onRevert(component.id)}
-            secondary
-            fullWidth
+            onClick={(e: MouseEvent) => {
+              e.stopPropagation()
+              handleGenerate()
+            }}
+            disabled={loading || isGenerating || !hasApiKey}
+            loading={loading}
           >
-            Revert to last
+            Generate
           </Button>
-        )}
+
+          {component.previousDescription && (
+            <Button
+              onClick={(e: MouseEvent) => {
+                e.stopPropagation()
+                onRevert(component.id)
+              }}
+              secondary
+            >
+              Revert
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   )
