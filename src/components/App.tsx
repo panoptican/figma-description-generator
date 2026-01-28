@@ -33,6 +33,7 @@ import {
   hashString
 } from '../services/cache'
 import { exportDescriptions, ExportFormat } from '../utils/export'
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { Header } from './Header'
 import { SettingsModal } from './SettingsModal'
 import { ExportModal } from './ExportModal'
@@ -74,6 +75,7 @@ export function App({ scope, currentPageName }: AppProps) {
   const imageExportResolveRef = useRef<((imageBase64: string | null) => void) | null>(null)
   const cacheRef = useRef(new DescriptionCache())
   const documentIdRef = useRef<string>('')
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
   const CONCURRENCY_LIMIT = 3
 
   // Helper to export component image and wait for result
@@ -458,6 +460,32 @@ export function App({ scope, currentPageName }: AppProps) {
     abortGenerateAllRef.current = true
   }, [])
 
+  // Close any open modal
+  const handleCloseModal = useCallback(() => {
+    if (isSettingsOpen) {
+      setIsSettingsOpen(false)
+    } else if (isExportOpen) {
+      setIsExportOpen(false)
+    }
+  }, [isSettingsOpen, isExportOpen])
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts(
+    {
+      onGenerateAll: () => {
+        if (settings.apiKey && !isGeneratingAll) {
+          handleGenerateAll()
+        }
+      },
+      onCloseModal: handleCloseModal,
+      onFocusSearch: () => {
+        searchInputRef.current?.focus()
+      }
+    },
+    searchInputRef,
+    !isLoading
+  )
+
   if (isLoading) {
     return (
       <div
@@ -500,6 +528,7 @@ export function App({ scope, currentPageName }: AppProps) {
         cacheSize={cacheSize}
         scope={scope}
         currentPageName={currentPageName}
+        searchInputRef={searchInputRef}
       />
 
       <ComponentList

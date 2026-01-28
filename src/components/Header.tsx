@@ -1,7 +1,8 @@
-import { Bold, Button, Muted, SearchTextbox, Text } from '@create-figma-plugin/ui'
-import { Fragment, h } from 'preact'
+import { Bold, Button, Muted, Text } from '@create-figma-plugin/ui'
+import { Fragment, h, Ref } from 'preact'
 
 import { Scope } from '../types'
+import { getShortcutLabel } from '../hooks/useKeyboardShortcuts'
 
 interface HeaderProps {
   searchValue: string
@@ -21,6 +22,7 @@ interface HeaderProps {
   cacheSize: number
   scope: Scope
   currentPageName: string
+  searchInputRef?: Ref<HTMLInputElement>
 }
 
 export function Header({
@@ -40,7 +42,8 @@ export function Header({
   exportCount,
   cacheSize,
   scope,
-  currentPageName
+  currentPageName,
+  searchInputRef
 }: HeaderProps) {
   const SparkleIcon = () => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -150,14 +153,47 @@ export function Header({
             style={{
               border: '1px solid var(--figma-color-border)',
               borderRadius: '6px',
-              backgroundColor: 'var(--figma-color-bg)'
+              backgroundColor: 'var(--figma-color-bg)',
+              position: 'relative'
             }}
           >
-            <SearchTextbox
-              placeholder="Search components..."
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder={`Search components... (${getShortcutLabel('F')})`}
               value={searchValue}
-              onValueInput={onSearchChange}
+              onInput={(e) => onSearchChange((e.target as HTMLInputElement).value)}
+              style={{
+                width: '100%',
+                height: '32px',
+                padding: '0 12px 0 32px',
+                border: 'none',
+                borderRadius: '6px',
+                backgroundColor: 'transparent',
+                color: 'var(--figma-color-text)',
+                fontSize: '12px',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
             />
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--figma-color-text-secondary)"
+              stroke-width="2"
+              style={{
+                position: 'absolute',
+                left: '10px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                pointerEvents: 'none'
+              }}
+            >
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <Text style={{ fontSize: '11px' }}>
@@ -200,14 +236,16 @@ export function Header({
             </Fragment>
           ) : (
             <Fragment>
-              <Button
-                onClick={onGenerateAllClick}
-                disabled={!hasApiKey}
-                fullWidth
-                style={{ height: '40px', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-              >
-                <SparkleIcon /> Generate All ({generateCount})
-              </Button>
+              <div title={`Generate descriptions for ${generateCount} components (${getShortcutLabel('G', true)})`}>
+                <Button
+                  onClick={onGenerateAllClick}
+                  disabled={!hasApiKey}
+                  fullWidth
+                  style={{ height: '40px', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                >
+                  <SparkleIcon /> Generate All ({generateCount})
+                </Button>
+              </div>
               <Text style={{ fontSize: '10px', textAlign: 'center', marginTop: '4px' }}>
                 <Muted>{hasApiKey ? 'Uses visible components in the list' : 'Add an API key to start'}</Muted>
               </Text>
