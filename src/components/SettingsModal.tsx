@@ -37,6 +37,7 @@ interface SettingsModalProps {
   onSave: (settings: Settings) => void
   defaultPrompt: string
   defaultVariantPrompt: string
+  defaultIconPrompt: string
 }
 
 const PROVIDER_OPTIONS: DropdownOption[] = [
@@ -51,12 +52,14 @@ export function SettingsModal({
   onClose,
   onSave,
   defaultPrompt,
-  defaultVariantPrompt
+  defaultVariantPrompt,
+  defaultIconPrompt
 }: SettingsModalProps) {
   const [provider, setProvider] = useState<AIProvider>(settings.provider)
   const [apiKey, setApiKey] = useState(settings.apiKey)
   const [customPrompt, setCustomPrompt] = useState(settings.customPrompt)
   const [customVariantPrompt, setCustomVariantPrompt] = useState(settings.customVariantPrompt)
+  const [customIconPrompt, setCustomIconPrompt] = useState(settings.customIconPrompt)
   const [includeImage, setIncludeImage] = useState(settings.includeImage)
   const [showVariants, setShowVariants] = useState(settings.showVariants)
   const [overwriteExisting, setOverwriteExisting] = useState(settings.overwriteExisting)
@@ -77,6 +80,7 @@ export function SettingsModal({
     setApiKey(settings.apiKey)
     setCustomPrompt(settings.customPrompt)
     setCustomVariantPrompt(settings.customVariantPrompt)
+    setCustomIconPrompt(settings.customIconPrompt)
     setIncludeImage(settings.includeImage)
     setShowVariants(settings.showVariants)
     setOverwriteExisting(settings.overwriteExisting)
@@ -97,6 +101,7 @@ export function SettingsModal({
       apiKey,
       customPrompt,
       customVariantPrompt,
+      customIconPrompt,
       includeImage,
       showVariants,
       overwriteExisting,
@@ -493,6 +498,40 @@ export function SettingsModal({
         <VerticalSpace space="small" />
         <Text>
           <Muted>Variables: {'{name}'}, {'{parentName}'}, {'{properties}'}</Muted>
+        </Text>
+
+        <VerticalSpace space="large" />
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text>
+            <Bold>Icon Prompt</Bold>
+          </Text>
+          {customIconPrompt && (
+            <Link href="#" onClick={() => setCustomIconPrompt('')}>
+              Reset to default
+            </Link>
+          )}
+        </div>
+        <VerticalSpace space="small" />
+        <textarea
+          value={customIconPrompt || defaultIconPrompt}
+          onInput={(e) => setCustomIconPrompt((e.target as HTMLTextAreaElement).value)}
+          style={{
+            width: '100%',
+            minHeight: '120px',
+            padding: '8px',
+            fontFamily: 'monospace',
+            fontSize: '11px',
+            border: '1px solid var(--figma-color-border)',
+            borderRadius: '4px',
+            resize: 'vertical',
+            backgroundColor: 'var(--figma-color-bg)',
+            color: 'var(--figma-color-text)'
+          }}
+        />
+        <VerticalSpace space="small" />
+        <Text>
+          <Muted>Variables: {'{icon_name}'} · Always includes component image</Muted>
         </Text>
 
         <VerticalSpace space="large" />

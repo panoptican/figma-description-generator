@@ -35,6 +35,7 @@ const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
   customPrompt: '',
   customVariantPrompt: '',
+  customIconPrompt: '',
   includeImage: false,
   showVariants: true,
   overwriteExisting: false,
@@ -61,7 +62,8 @@ function getComponents(scope: Scope): ComponentData[] {
           type: 'COMPONENT_SET',
           properties: extractComponentSetProperties(node),
           currentDescription: node.description,
-          pageName: page.name
+          pageName: page.name,
+          isIcon: /^icon\b/i.test(node.name)
         })
 
         for (const variant of node.children) {
@@ -73,7 +75,8 @@ function getComponents(scope: Scope): ComponentData[] {
               properties: parseVariantName(variant.name),
               currentDescription: variant.description,
               pageName: page.name,
-              parentName: node.name
+              parentName: node.name,
+              isIcon: /^icon\b/i.test(node.name)
             })
           }
         }
@@ -89,7 +92,8 @@ function getComponents(scope: Scope): ComponentData[] {
           type: 'COMPONENT',
           properties: [],
           currentDescription: node.description,
-          pageName: page.name
+          pageName: page.name,
+          isIcon: /^icon\b/i.test(node.name)
         })
       }
     }

@@ -12,6 +12,7 @@ export interface ComponentData {
   previousDescription?: string
   pageName: string
   parentName?: string
+  isIcon?: boolean
 }
 
 export interface ProviderConfig {
@@ -25,6 +26,7 @@ export interface Settings {
   apiKey: string
   customPrompt: string
   customVariantPrompt: string
+  customIconPrompt: string
   includeImage: boolean
   showVariants: boolean
   overwriteExisting: boolean

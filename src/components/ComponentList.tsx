@@ -24,6 +24,8 @@ interface ComponentListProps {
   onSelect: (id: string) => void
   onCancelRetry: (id: string) => void
   usedProvider: Record<string, AIProvider | undefined>
+  iconOverrides: Record<string, boolean>
+  onToggleIcon: (id: string) => void
 }
 
 export function ComponentList({
@@ -39,7 +41,9 @@ export function ComponentList({
   retryStatus,
   onSelect,
   onCancelRetry,
-  usedProvider
+  usedProvider,
+  iconOverrides,
+  onToggleIcon
 }: ComponentListProps) {
   const [collapsedPages, setCollapsedPages] = useState<Set<string>>(new Set())
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
@@ -114,7 +118,10 @@ export function ComponentList({
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                userSelect: 'none'
+                userSelect: 'none',
+                position: 'sticky',
+                top: 0,
+                zIndex: 10
               }}
             >
               {/* Clickable area for collapse/expand page */}
@@ -212,6 +219,8 @@ export function ComponentList({
                   usedProvider={usedProvider[component.id]}
                   isExpanded={expandedRows.has(component.id)}
                   onToggleExpand={handleToggleExpand}
+                  isIcon={iconOverrides[component.id] ?? component.isIcon ?? false}
+                  onToggleIcon={onToggleIcon}
                 />
               ))}
           </div>

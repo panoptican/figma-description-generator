@@ -24,7 +24,7 @@ import {
   SettingsSavedHandler,
   SelectComponentHandler
 } from '../types'
-import { generateDescriptionWithFallback, RetryError, DEFAULT_PROMPT, DEFAULT_VARIANT_PROMPT, getProviderDisplayName, GenerateWithFallbackResult } from '../services/ai'
+import { generateDescriptionWithFallback, RetryError, DEFAULT_PROMPT, DEFAULT_VARIANT_PROMPT, DEFAULT_ICON_PROMPT, getProviderDisplayName, GenerateWithFallbackResult } from '../services/ai'
 import { AIProvider } from '../types'
 import {
   DescriptionCache,
@@ -49,6 +49,7 @@ const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
   customPrompt: '',
   customVariantPrompt: '',
+  customIconPrompt: '',
   includeImage: false,
   showVariants: true,
   overwriteExisting: false,
@@ -70,6 +71,7 @@ export function App({ scope, currentPageName }: AppProps) {
   const [cacheSize, setCacheSize] = useState(0)
   const [retryStatus, setRetryStatus] = useState<Record<string, { attempt: number; maxAttempts: number } | undefined>>({})
   const [usedProvider, setUsedProvider] = useState<Record<string, AIProvider | undefined>>({})
+  const [iconOverrides, setIconOverrides] = useState<Record<string, boolean>>({})
   const abortGenerateAllRef = useRef(false)
   const abortRetryRef = useRef<Record<string, boolean>>({})
   const imageExportResolveRef = useRef<((imageBase64: string | null) => void) | null>(null)
@@ -220,18 +222,19 @@ export function App({ scope, currentPageName }: AppProps) {
   ).length
 
   const handleGenerate = useCallback(
-    async (component: ComponentData): Promise<{ description: string; fromCache: boolean; usedProvider?: AIProvider }> => {
+    async (component: ComponentData, options?: { skipCache?: boolean }): Promise<{ description: string; fromCache: boolean; usedProvider?: AIProvider }> => {
+      const isIcon = iconOverrides[component.id] ?? component.isIcon ?? false
       let imageBase64: string | undefined
 
-      if (settings.includeImage) {
+      if (settings.includeImage || isIcon) {
         const image = await exportComponentImage(component.id)
         if (image) {
           imageBase64 = image
         }
       }
 
-      // Check cache first (unless overwriteExisting is enabled)
-      if (!settings.overwriteExisting) {
+      // Check cache first (unless overwriteExisting is enabled or cache is explicitly skipped)
+      if (!settings.overwriteExisting && !options?.skipCache) {
         const cacheKey = getCacheKeyForComponent(component, imageBase64)
         const cached = cacheRef.current.get(cacheKey)
         if (cached) {
@@ -269,7 +272,8 @@ export function App({ scope, currentPageName }: AppProps) {
               setUsedProvider((prev) => ({ ...prev, [component.id]: provider }))
             },
             shouldAbort: () => abortRetryRef.current[component.id] || abortGenerateAllRef.current
-          }
+          },
+          { isIcon, customIconPrompt: settings.customIconPrompt || undefined }
         )
 
         // Clear retry status on success
@@ -291,7 +295,7 @@ export function App({ scope, currentPageName }: AppProps) {
         throw error
       }
     },
-    [settings, exportComponentImage, getCacheKeyForComponent, saveCache]
+    [settings, exportComponentImage, getCacheKeyForComponent, saveCache, iconOverrides]
   )
 
   // Cancel retry for a specific component
@@ -299,10 +303,25 @@ export function App({ scope, currentPageName }: AppProps) {
     abortRetryRef.current[componentId] = true
   }, [])
 
+  // Toggle icon status for a component
+  const handleToggleIcon = useCallback((componentId: string) => {
+    setIconOverrides((prev) => {
+      const current = prev[componentId]
+      const component = components.find((c) => c.id === componentId)
+      const autoDetected = component?.isIcon ?? false
+      // Cycle: if no override, set opposite of auto; if overridden, clear override
+      if (current === undefined) {
+        return { ...prev, [componentId]: !autoDetected }
+      }
+      const { [componentId]: _, ...rest } = prev
+      return rest
+    })
+  }, [components])
+
   // Wrapper for ComponentRow that expects just description string
   const handleGenerateForRow = useCallback(
     async (component: ComponentData): Promise<string> => {
-      const result = await handleGenerate(component)
+      const result = await handleGenerate(component, { skipCache: true })
       return result.description
     },
     [handleGenerate]
@@ -539,6 +558,8 @@ export function App({ scope, currentPageName }: AppProps) {
         retryStatus={retryStatus}
         onCancelRetry={handleCancelRetry}
         usedProvider={usedProvider}
+        iconOverrides={iconOverrides}
+        onToggleIcon={handleToggleIcon}
       />
 
       <SettingsModal
@@ -548,6 +569,7 @@ export function App({ scope, currentPageName }: AppProps) {
         onSave={handleSaveSettings}
         defaultPrompt={DEFAULT_PROMPT}
         defaultVariantPrompt={DEFAULT_VARIANT_PROMPT}
+        defaultIconPrompt={DEFAULT_ICON_PROMPT}
       />
 
       <ExportModal

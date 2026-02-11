@@ -1,9 +1,8 @@
-import { Button, Text } from '@create-figma-plugin/ui'
-import { Fragment, h } from 'preact'
+import { Button } from '@create-figma-plugin/ui'
+import { h } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 
 import { AIProvider, ComponentData } from '../types'
-import { getProviderDisplayName } from '../services/ai'
 
 interface RetryStatus {
   attempt: number
@@ -26,6 +25,8 @@ interface ComponentRowProps {
   usedProvider?: AIProvider
   isExpanded: boolean
   onToggleExpand: (id: string) => void
+  isIcon: boolean
+  onToggleIcon: (id: string) => void
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -55,7 +56,9 @@ export function ComponentRow({
   onCancelRetry,
   usedProvider,
   isExpanded,
-  onToggleExpand
+  onToggleExpand,
+  isIcon,
+  onToggleIcon
 }: ComponentRowProps) {
   const [description, setDescription] = useState(component.currentDescription)
   const [loading, setLoading] = useState(false)
@@ -122,6 +125,7 @@ export function ComponentRow({
     try {
       const newDescription = await onGenerate(component)
       setDescription(newDescription)
+      onConfirm(component.id, newDescription)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate')
     } finally {
@@ -144,19 +148,6 @@ export function ComponentRow({
     ? `${TYPE_LABELS[component.type]} · ${propertiesStr}`
     : TYPE_LABELS[component.type]
 
-  // Status text for expanded view
-  const getStatusText = () => {
-    if (isSaving) return 'Saving...'
-    if (error || externalError) return null
-    if (retryStatus) return null
-    if (lastFromCache === true) return 'From cache'
-    if (lastFromCache === false) {
-      return lastUsedProvider
-        ? `Generated via ${getProviderDisplayName(lastUsedProvider)}`
-        : 'Generated'
-    }
-    return null
-  }
 
   // Collapsed state - single line
   if (!isExpanded) {
@@ -173,20 +164,29 @@ export function ComponentRow({
           boxSizing: 'border-box',
           borderBottom: '1px solid var(--figma-color-border)',
           cursor: 'pointer',
-          backgroundColor: isEmpty ? 'rgba(251, 191, 36, 0.08)' : 'transparent',
+          backgroundColor: 'transparent',
           transition: 'background-color 0.15s'
         }}
         onMouseEnter={(e) => {
-          (e.currentTarget as HTMLElement).style.backgroundColor = isEmpty
-            ? 'rgba(251, 191, 36, 0.15)'
-            : 'var(--figma-color-bg-hover)'
+          (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--figma-color-bg-hover)'
         }}
         onMouseLeave={(e) => {
-          (e.currentTarget as HTMLElement).style.backgroundColor = isEmpty
-            ? 'rgba(251, 191, 36, 0.08)'
-            : 'transparent'
+          (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
         }}
       >
+        {/* Status dot */}
+        {isEmpty && (
+          <span
+            style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              backgroundColor: '#f59e0b',
+              flexShrink: 0
+            }}
+          />
+        )}
+
         {/* Component name */}
         <span
           onClick={handleNameClick}
@@ -205,19 +205,38 @@ export function ComponentRow({
           {component.name}
         </span>
 
-        {/* Description preview */}
+        {/* Icon badge */}
+        {isIcon && (
+          <span
+            title="Icon component — uses icon prompt"
+            style={{
+              fontSize: '10px',
+              padding: '1px 5px',
+              borderRadius: '3px',
+              backgroundColor: 'var(--figma-color-bg-tertiary)',
+              color: 'var(--figma-color-text-secondary)',
+              flexShrink: 0,
+              lineHeight: '14px'
+            }}
+          >
+            Icon
+          </span>
+        )}
+
+        {/* Description preview or empty indicator */}
         <span
           style={{
             flex: 1,
-            color: 'var(--figma-color-text-secondary)',
+            color: isEmpty ? 'var(--figma-color-text-tertiary)' : 'var(--figma-color-text-secondary)',
             fontSize: '12px',
+            fontStyle: isEmpty ? 'italic' : 'normal',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
             minWidth: 0
           }}
         >
-          {truncateDescription(component.currentDescription)}
+          {isEmpty ? 'No description' : truncateDescription(component.currentDescription)}
         </span>
 
         {/* Expand indicator */}
@@ -277,15 +296,37 @@ export function ComponentRow({
         </span>
       </div>
 
-      {/* Type and properties as muted text */}
+      {/* Type, properties, and icon toggle */}
       <div
         style={{
-          color: 'var(--figma-color-text-secondary)',
-          fontSize: '11px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
           marginBottom: '8px'
         }}
       >
-        {typeAndProps}
+        <span style={{ color: 'var(--figma-color-text-secondary)', fontSize: '11px' }}>
+          {typeAndProps}
+        </span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggleIcon(component.id)
+          }}
+          title={isIcon ? 'Using icon prompt (click to disable)' : 'Click to use icon prompt'}
+          style={{
+            padding: '1px 6px',
+            borderRadius: '3px',
+            border: isIcon ? 'none' : '1px dashed var(--figma-color-border)',
+            backgroundColor: isIcon ? 'var(--figma-color-bg-brand)' : 'transparent',
+            color: isIcon ? 'var(--figma-color-text-onbrand)' : 'var(--figma-color-text-tertiary)',
+            fontSize: '10px',
+            cursor: 'pointer',
+            lineHeight: '14px'
+          }}
+        >
+          Icon
+        </button>
       </div>
 
       {/* Textarea - 2 lines default */}
@@ -355,56 +396,30 @@ export function ComponentRow({
         </div>
       )}
 
-      {/* Footer row - status text left, buttons right */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginTop: '8px',
-          gap: '12px'
-        }}
-      >
-        {/* Status text */}
-        <div
-          style={{
-            fontSize: '11px',
-            color: isSaving
-              ? 'var(--figma-color-text-secondary)'
-              : lastFromCache === true
-                ? 'var(--figma-color-text-secondary)'
-                : 'var(--figma-color-text-success)',
-            flex: 1
+      {/* Action buttons */}
+      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '8px' }}>
+        <Button
+          onClick={(e: MouseEvent) => {
+            e.stopPropagation()
+            handleGenerate()
           }}
+          disabled={loading || isGenerating || !hasApiKey}
+          loading={loading}
         >
-          {getStatusText()}
-        </div>
+          Generate
+        </Button>
 
-        {/* Action buttons */}
-        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+        {component.previousDescription && (
           <Button
             onClick={(e: MouseEvent) => {
               e.stopPropagation()
-              handleGenerate()
+              onRevert(component.id)
             }}
-            disabled={loading || isGenerating || !hasApiKey}
-            loading={loading}
+            secondary
           >
-            Generate
+            Revert
           </Button>
-
-          {component.previousDescription && (
-            <Button
-              onClick={(e: MouseEvent) => {
-                e.stopPropagation()
-                onRevert(component.id)
-              }}
-              secondary
-            >
-              Revert
-            </Button>
-          )}
-        </div>
+        )}
       </div>
     </div>
   )

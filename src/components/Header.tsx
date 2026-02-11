@@ -33,16 +33,10 @@ export function Header({
   searchInputRef
 }: HeaderProps) {
   const SparkleIcon = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M12 3v3" />
-      <path d="M12 18v3" />
-      <path d="M3 12h3" />
-      <path d="M18 12h3" />
-      <path d="M5.6 5.6 7.8 7.8" />
-      <path d="M16.2 16.2 18.4 18.4" />
-      <path d="M5.6 18.4 7.8 16.2" />
-      <path d="M16.2 7.8 18.4 5.6" />
-      <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z" />
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .963L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
+      <path d="M20 3v4" />
+      <path d="M22 5h-4" />
     </svg>
   )
 
@@ -141,20 +135,30 @@ export function Header({
           Cancel ({progress.current}/{progress.total})
         </Button>
       ) : (
-        <div title={hasApiKey ? `Generate descriptions for ${generateCount} components (${getShortcutLabel('G', true)})` : 'Add an API key in settings to start'}>
-          <Button
-            onClick={onGenerateAllClick}
-            disabled={!hasApiKey}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              flexShrink: 0
-            }}
-          >
-            <SparkleIcon /> Generate All ({generateCount})
-          </Button>
-        </div>
+        <button
+          onClick={onGenerateAllClick}
+          disabled={!hasApiKey}
+          title={hasApiKey ? `Generate descriptions for ${generateCount} components (${getShortcutLabel('G', true)})` : 'Add an API key in settings to start'}
+          style={{
+            height: 32,
+            padding: '0 12px',
+            borderRadius: '6px',
+            border: 'none',
+            backgroundColor: 'var(--figma-color-bg-brand)',
+            color: 'var(--figma-color-text-onbrand)',
+            fontSize: '12px',
+            fontWeight: 500,
+            cursor: hasApiKey ? 'pointer' : 'not-allowed',
+            opacity: hasApiKey ? 1 : 0.5,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            flexShrink: 0,
+            whiteSpace: 'nowrap'
+          }}
+        >
+          <SparkleIcon /> Generate All ({generateCount})
+        </button>
       )}
 
       {/* Export icon button */}

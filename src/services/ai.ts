@@ -43,6 +43,19 @@ Rules:
 
 Output only the description text.`
 
+export const DEFAULT_ICON_PROMPT = `You are an icon naming assistant. Given an icon image and its current name, return a comma-separated list of 10-15 alternative names.
+
+Analyze the icon visually—don't rely solely on the provided name, which may be inaccurate or overly specific. Think laterally: what concepts, actions, or contexts does this icon evoke? What might a designer search for when looking for this icon?
+
+Include:
+- What the icon literally depicts
+- Actions or concepts it commonly represents in UI
+- Terms designers might search for in icon libraries
+
+Return ONLY the comma-separated list. Lowercase, single words preferred. No articles or prepositions.
+
+Icon name: {icon_name}`
+
 export const DEFAULT_VARIANT_PROMPT = `Write a brief description for a component variant.
 
 Parent component: {parentName}
@@ -63,9 +76,15 @@ export function buildPrompt(
   properties: string[],
   parentName?: string,
   customPrompt?: string,
-  customVariantPrompt?: string
+  customVariantPrompt?: string,
+  options?: { isIcon?: boolean; customIconPrompt?: string }
 ): string {
   const propsString = properties.length > 0 ? properties.join(', ') : 'None'
+
+  if (options?.isIcon) {
+    const template = options.customIconPrompt || DEFAULT_ICON_PROMPT
+    return template.replace(/{icon_name}/g, componentName)
+  }
 
   if (componentType === 'VARIANT' && parentName) {
     const template = customVariantPrompt || DEFAULT_VARIANT_PROMPT
@@ -321,9 +340,10 @@ export async function generateDescriptionWithFallback(
   customPrompt?: string,
   customVariantPrompt?: string,
   imageBase64?: string,
-  options?: FallbackOptions
+  options?: FallbackOptions,
+  iconOptions?: { isIcon?: boolean; customIconPrompt?: string }
 ): Promise<GenerateWithFallbackResult> {
-  const prompt = buildPrompt(componentName, componentType, properties, parentName, customPrompt, customVariantPrompt)
+  const prompt = buildPrompt(componentName, componentType, properties, parentName, customPrompt, customVariantPrompt, iconOptions)
 
   // Get the provider chain
   const chain = options?.enableFallback
