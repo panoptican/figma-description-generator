@@ -1,33 +1,4 @@
-import { AIProvider, ProviderConfig } from '../types'
-import { withRetry, RetryError } from '../utils/retry'
-import { shouldFallback, getProviderChain, getProviderDisplayName } from './fallback'
-
-export interface GenerateOptions {
-  onRetry?: (attempt: number, maxAttempts: number, error: Error) => void
-  shouldAbort?: () => boolean
-}
-
-export interface GenerateResult {
-  description: string
-  attempts: number
-  fromRetry: boolean
-}
-
-export interface GenerateWithFallbackResult {
-  description: string
-  usedProvider: AIProvider
-  fallbackUsed: boolean
-  totalAttempts: number
-}
-
-export interface FallbackOptions extends GenerateOptions {
-  providerChain?: ProviderConfig[]
-  enableFallback?: boolean
-  onProviderAttempt?: (provider: AIProvider) => void
-  onProviderFailed?: (provider: AIProvider, error: Error) => void
-}
-
-export { RetryError, getProviderDisplayName }
+import { AIProvider } from '../types'
 
 export const DEFAULT_PROMPT = `Write a brief description for a design system component.
 
@@ -69,6 +40,19 @@ Rules:
 - Be direct (e.g. "Used for destructive actions like delete" or "Displays in a compact size for dense layouts")
 
 Output only the description text.`
+
+export function getProviderDisplayName(provider: AIProvider): string {
+  switch (provider) {
+    case 'chatgpt':
+      return 'ChatGPT'
+    case 'claude':
+      return 'Claude'
+    case 'gemini':
+      return 'Gemini'
+    default:
+      return provider
+  }
+}
 
 export function buildPrompt(
   componentName: string,
@@ -253,12 +237,20 @@ async function generateWithChatGPT(
   return text.trim()
 }
 
-async function generateDescriptionInternal(
+export async function generateDescription(
   provider: AIProvider,
   apiKey: string,
-  prompt: string,
-  imageBase64?: string
+  componentName: string,
+  componentType: string,
+  properties: string[],
+  parentName?: string,
+  customPrompt?: string,
+  customVariantPrompt?: string,
+  imageBase64?: string,
+  iconOptions?: { isIcon?: boolean; customIconPrompt?: string }
 ): Promise<string> {
+  const prompt = buildPrompt(componentName, componentType, properties, parentName, customPrompt, customVariantPrompt, iconOptions)
+
   switch (provider) {
     case 'gemini':
       return generateWithGemini(apiKey, prompt, imageBase64)
@@ -269,146 +261,4 @@ async function generateDescriptionInternal(
     default:
       throw new Error(`Unknown provider: ${provider}`)
   }
-}
-
-/**
- * Generate description with automatic retry on retryable errors.
- * Returns extended result with attempt count and retry status.
- */
-export async function generateDescriptionWithRetry(
-  provider: AIProvider,
-  apiKey: string,
-  componentName: string,
-  componentType: string,
-  properties: string[],
-  parentName?: string,
-  customPrompt?: string,
-  customVariantPrompt?: string,
-  imageBase64?: string,
-  options?: GenerateOptions
-): Promise<GenerateResult> {
-  const prompt = buildPrompt(componentName, componentType, properties, parentName, customPrompt, customVariantPrompt)
-
-  const result = await withRetry(
-    () => generateDescriptionInternal(provider, apiKey, prompt, imageBase64),
-    {
-      maxAttempts: 3,
-      baseDelayMs: 1000,
-      onRetry: options?.onRetry,
-      shouldAbort: options?.shouldAbort
-    }
-  )
-
-  return {
-    description: result.data,
-    attempts: result.attempts,
-    fromRetry: result.fromRetry
-  }
-}
-
-/**
- * Generate description (legacy interface for backward compatibility).
- * For retry support, use generateDescriptionWithRetry instead.
- */
-export async function generateDescription(
-  provider: AIProvider,
-  apiKey: string,
-  componentName: string,
-  componentType: string,
-  properties: string[],
-  parentName?: string,
-  customPrompt?: string,
-  customVariantPrompt?: string,
-  imageBase64?: string
-): Promise<string> {
-  const prompt = buildPrompt(componentName, componentType, properties, parentName, customPrompt, customVariantPrompt)
-  return generateDescriptionInternal(provider, apiKey, prompt, imageBase64)
-}
-
-/**
- * Generate description with fallback provider chain.
- * Tries each provider in the chain until one succeeds.
- * Only falls back on availability errors, not auth errors.
- */
-export async function generateDescriptionWithFallback(
-  primaryProvider: AIProvider,
-  primaryApiKey: string,
-  componentName: string,
-  componentType: string,
-  properties: string[],
-  parentName?: string,
-  customPrompt?: string,
-  customVariantPrompt?: string,
-  imageBase64?: string,
-  options?: FallbackOptions,
-  iconOptions?: { isIcon?: boolean; customIconPrompt?: string }
-): Promise<GenerateWithFallbackResult> {
-  const prompt = buildPrompt(componentName, componentType, properties, parentName, customPrompt, customVariantPrompt, iconOptions)
-
-  // Get the provider chain
-  const chain = options?.enableFallback
-    ? getProviderChain(options.providerChain, primaryProvider, primaryApiKey)
-    : [{ provider: primaryProvider, apiKey: primaryApiKey }]
-
-  if (chain.length === 0) {
-    throw new Error('No providers configured with valid API keys')
-  }
-
-  let totalAttempts = 0
-  let lastError: Error | null = null
-  let fallbackUsed = false
-
-  for (let i = 0; i < chain.length; i++) {
-    const { provider, apiKey } = chain[i]
-
-    // Check if we should abort
-    if (options?.shouldAbort?.()) {
-      throw new Error('Generation aborted')
-    }
-
-    // Notify about provider attempt
-    if (i > 0) {
-      fallbackUsed = true
-    }
-    options?.onProviderAttempt?.(provider)
-
-    try {
-      const result = await withRetry(
-        () => generateDescriptionInternal(provider, apiKey, prompt, imageBase64),
-        {
-          maxAttempts: 3,
-          baseDelayMs: 1000,
-          onRetry: options?.onRetry,
-          shouldAbort: options?.shouldAbort
-        }
-      )
-
-      totalAttempts += result.attempts
-
-      return {
-        description: result.data,
-        usedProvider: provider,
-        fallbackUsed,
-        totalAttempts
-      }
-    } catch (error) {
-      totalAttempts += 3 // Max retry attempts were used
-      lastError = error instanceof Error ? error : new Error(String(error))
-
-      options?.onProviderFailed?.(provider, lastError)
-
-      // Check if we should try the next provider
-      const isLastProvider = i === chain.length - 1
-      if (!isLastProvider && shouldFallback(lastError)) {
-        // Continue to next provider
-        continue
-      }
-
-      // Either this is the last provider, or the error is not fallback-worthy
-      throw lastError
-    }
-  }
-
-  // Should never reach here, but just in case
-  throw lastError || new Error('All providers failed')
 }

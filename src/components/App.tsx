@@ -4,19 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 
 import {
   ApplyDescriptionHandler,
-  CacheClearedHandler,
-  CacheData,
-  CacheLoadedHandler,
-  ClearCacheHandler,
   ComponentData,
   ComponentsLoadedHandler,
   DescriptionAppliedHandler,
   ExportImageHandler,
   ImageExportedHandler,
-  LoadCacheHandler,
   LoadComponentsHandler,
   LoadSettingsHandler,
-  SaveCacheHandler,
   SaveSettingsHandler,
   Scope,
   Settings,
@@ -24,14 +18,7 @@ import {
   SettingsSavedHandler,
   SelectComponentHandler
 } from '../types'
-import { generateDescriptionWithFallback, RetryError, DEFAULT_PROMPT, DEFAULT_VARIANT_PROMPT, DEFAULT_ICON_PROMPT, getProviderDisplayName, GenerateWithFallbackResult } from '../services/ai'
-import { AIProvider } from '../types'
-import {
-  DescriptionCache,
-  generateCacheKey,
-  hashPromptConfig,
-  hashString
-} from '../services/cache'
+import { generateDescription, DEFAULT_PROMPT, DEFAULT_VARIANT_PROMPT, DEFAULT_ICON_PROMPT } from '../services/ai'
 import { exportDescriptions, ExportFormat } from '../utils/export'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { Header } from './Header'
@@ -52,9 +39,7 @@ const DEFAULT_SETTINGS: Settings = {
   customIconPrompt: '',
   includeImage: false,
   showVariants: true,
-  overwriteExisting: false,
-  enableFallback: false,
-  providerChain: undefined
+  overwriteExisting: false
 }
 
 export function App({ scope, currentPageName }: AppProps) {
@@ -67,56 +52,20 @@ export function App({ scope, currentPageName }: AppProps) {
   const [isGeneratingAll, setIsGeneratingAll] = useState(false)
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: 0 })
   const [rowErrors, setRowErrors] = useState<Record<string, string | undefined>>({})
-  const [cacheHits, setCacheHits] = useState<Record<string, boolean>>({})
-  const [cacheSize, setCacheSize] = useState(0)
-  const [retryStatus, setRetryStatus] = useState<Record<string, { attempt: number; maxAttempts: number } | undefined>>({})
-  const [usedProvider, setUsedProvider] = useState<Record<string, AIProvider | undefined>>({})
   const [iconOverrides, setIconOverrides] = useState<Record<string, boolean>>({})
   const abortGenerateAllRef = useRef(false)
-  const abortRetryRef = useRef<Record<string, boolean>>({})
-  const imageExportResolveRef = useRef<((imageBase64: string | null) => void) | null>(null)
-  const cacheRef = useRef(new DescriptionCache())
-  const documentIdRef = useRef<string>('')
+  // BUG-001 fix: Map of resolvers keyed by component ID instead of single ref
+  const imageExportResolvers = useRef<Map<string, (value: string | null) => void>>(new Map())
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const CONCURRENCY_LIMIT = 3
 
   // Helper to export component image and wait for result
   const exportComponentImage = useCallback((componentId: string): Promise<string | null> => {
     return new Promise((resolve) => {
-      imageExportResolveRef.current = resolve
+      imageExportResolvers.current.set(componentId, resolve)
       emit<ExportImageHandler>('EXPORT_IMAGE', { id: componentId })
     })
   }, [])
-
-  // Save cache to storage
-  const saveCache = useCallback(() => {
-    const data: CacheData = {
-      entries: cacheRef.current.export(),
-      documentId: documentIdRef.current
-    }
-    emit<SaveCacheHandler>('SAVE_CACHE', data)
-    setCacheSize(cacheRef.current.size)
-  }, [])
-
-  // Generate cache key for a component
-  const getCacheKeyForComponent = useCallback((
-    component: ComponentData,
-    imageBase64?: string
-  ): string => {
-    const promptHash = hashPromptConfig(
-      settings.customPrompt || DEFAULT_PROMPT,
-      settings.customVariantPrompt || DEFAULT_VARIANT_PROMPT,
-      settings.includeImage
-    )
-    return generateCacheKey({
-      name: component.name,
-      type: component.type,
-      properties: component.properties,
-      parentName: component.parentName,
-      promptHash,
-      imageHash: imageBase64 ? hashString(imageBase64) : undefined
-    })
-  }, [settings.customPrompt, settings.customVariantPrompt, settings.includeImage])
 
   // Load initial data
   useEffect(() => {
@@ -131,7 +80,12 @@ export function App({ scope, currentPageName }: AppProps) {
     const unsubscribeSettings = on<SettingsLoadedHandler>(
       'SETTINGS_LOADED',
       (loadedSettings) => {
-        setSettings({ ...DEFAULT_SETTINGS, ...loadedSettings })
+        const merged = { ...DEFAULT_SETTINGS, ...loadedSettings }
+        setSettings(merged)
+        // BUG-003 fix: load persisted icon overrides
+        if (merged.iconOverrides) {
+          setIconOverrides(merged.iconOverrides)
+        }
       }
     )
 
@@ -154,36 +108,19 @@ export function App({ scope, currentPageName }: AppProps) {
       }
     )
 
+    // BUG-001 fix: resolve by component ID from the Map
     const unsubscribeImageExported = on<ImageExportedHandler>(
       'IMAGE_EXPORTED',
-      ({ imageBase64 }) => {
-        if (imageExportResolveRef.current) {
-          imageExportResolveRef.current(imageBase64)
-          imageExportResolveRef.current = null
+      ({ id, imageBase64 }) => {
+        const resolve = imageExportResolvers.current.get(id)
+        if (resolve) {
+          resolve(imageBase64)
+          imageExportResolvers.current.delete(id)
         }
       }
     )
 
-    const unsubscribeCacheLoaded = on<CacheLoadedHandler>(
-      'CACHE_LOADED',
-      (data: CacheData) => {
-        documentIdRef.current = data.documentId
-        cacheRef.current.load(data.entries)
-        setCacheSize(cacheRef.current.size)
-      }
-    )
-
-    const unsubscribeCacheCleared = on<CacheClearedHandler>(
-      'CACHE_CLEARED',
-      () => {
-        cacheRef.current.clear()
-        setCacheSize(0)
-        setCacheHits({})
-      }
-    )
-
     emit<LoadSettingsHandler>('LOAD_SETTINGS')
-    emit<LoadCacheHandler>('LOAD_CACHE')
     emit<LoadComponentsHandler>('LOAD_COMPONENTS')
 
     return () => {
@@ -192,8 +129,6 @@ export function App({ scope, currentPageName }: AppProps) {
       unsubscribeSettingsSaved()
       unsubscribeDescriptionApplied()
       unsubscribeImageExported()
-      unsubscribeCacheLoaded()
-      unsubscribeCacheCleared()
     }
   }, [])
 
@@ -222,7 +157,7 @@ export function App({ scope, currentPageName }: AppProps) {
   ).length
 
   const handleGenerate = useCallback(
-    async (component: ComponentData, options?: { skipCache?: boolean }): Promise<{ description: string; fromCache: boolean; usedProvider?: AIProvider }> => {
+    async (component: ComponentData): Promise<string> => {
       const isIcon = iconOverrides[component.id] ?? component.isIcon ?? false
       let imageBase64: string | undefined
 
@@ -233,75 +168,23 @@ export function App({ scope, currentPageName }: AppProps) {
         }
       }
 
-      // Check cache first (unless overwriteExisting is enabled or cache is explicitly skipped)
-      if (!settings.overwriteExisting && !options?.skipCache) {
-        const cacheKey = getCacheKeyForComponent(component, imageBase64)
-        const cached = cacheRef.current.get(cacheKey)
-        if (cached) {
-          setCacheHits((prev) => ({ ...prev, [component.id]: true }))
-          return { description: cached.description, fromCache: true }
-        }
-      }
+      const description = await generateDescription(
+        settings.provider,
+        settings.apiKey,
+        component.name,
+        component.type,
+        component.properties,
+        component.parentName,
+        settings.customPrompt || undefined,
+        settings.customVariantPrompt || undefined,
+        imageBase64,
+        { isIcon, customIconPrompt: settings.customIconPrompt || undefined }
+      )
 
-      // Clear any previous retry abort signal
-      abortRetryRef.current[component.id] = false
-      setRetryStatus((prev) => ({ ...prev, [component.id]: undefined }))
-      setUsedProvider((prev) => ({ ...prev, [component.id]: undefined }))
-
-      try {
-        const result = await generateDescriptionWithFallback(
-          settings.provider,
-          settings.apiKey,
-          component.name,
-          component.type,
-          component.properties,
-          component.parentName,
-          settings.customPrompt || undefined,
-          settings.customVariantPrompt || undefined,
-          imageBase64,
-          {
-            enableFallback: settings.enableFallback,
-            providerChain: settings.providerChain,
-            onRetry: (attempt, maxAttempts) => {
-              setRetryStatus((prev) => ({
-                ...prev,
-                [component.id]: { attempt: attempt + 1, maxAttempts }
-              }))
-            },
-            onProviderAttempt: (provider) => {
-              setUsedProvider((prev) => ({ ...prev, [component.id]: provider }))
-            },
-            shouldAbort: () => abortRetryRef.current[component.id] || abortGenerateAllRef.current
-          },
-          { isIcon, customIconPrompt: settings.customIconPrompt || undefined }
-        )
-
-        // Clear retry status on success
-        setRetryStatus((prev) => ({ ...prev, [component.id]: undefined }))
-
-        // Track which provider was used
-        setUsedProvider((prev) => ({ ...prev, [component.id]: result.usedProvider }))
-
-        // Store in cache
-        const cacheKey = getCacheKeyForComponent(component, imageBase64)
-        cacheRef.current.set(cacheKey, result.description)
-        saveCache()
-        setCacheHits((prev) => ({ ...prev, [component.id]: false }))
-
-        return { description: result.description, fromCache: false, usedProvider: result.usedProvider }
-      } catch (error) {
-        // Clear retry status on failure
-        setRetryStatus((prev) => ({ ...prev, [component.id]: undefined }))
-        throw error
-      }
+      return description
     },
-    [settings, exportComponentImage, getCacheKeyForComponent, saveCache, iconOverrides]
+    [settings, exportComponentImage, iconOverrides]
   )
-
-  // Cancel retry for a specific component
-  const handleCancelRetry = useCallback((componentId: string) => {
-    abortRetryRef.current[componentId] = true
-  }, [])
 
   // Toggle icon status for a component
   const handleToggleIcon = useCallback((componentId: string) => {
@@ -309,20 +192,27 @@ export function App({ scope, currentPageName }: AppProps) {
       const current = prev[componentId]
       const component = components.find((c) => c.id === componentId)
       const autoDetected = component?.isIcon ?? false
+      let newOverrides: Record<string, boolean>
       // Cycle: if no override, set opposite of auto; if overridden, clear override
       if (current === undefined) {
-        return { ...prev, [componentId]: !autoDetected }
+        newOverrides = { ...prev, [componentId]: !autoDetected }
+      } else {
+        const { [componentId]: _, ...rest } = prev
+        newOverrides = rest
       }
-      const { [componentId]: _, ...rest } = prev
-      return rest
+
+      // BUG-003 fix: persist icon overrides to settings
+      const newSettings = { ...settings, iconOverrides: newOverrides }
+      emit<SaveSettingsHandler>('SAVE_SETTINGS', newSettings)
+
+      return newOverrides
     })
-  }, [components])
+  }, [components, settings])
 
   // Wrapper for ComponentRow that expects just description string
   const handleGenerateForRow = useCallback(
     async (component: ComponentData): Promise<string> => {
-      const result = await handleGenerate(component, { skipCache: true })
-      return result.description
+      return handleGenerate(component)
     },
     [handleGenerate]
   )
@@ -374,13 +264,11 @@ export function App({ scope, currentPageName }: AppProps) {
   }, [components])
 
   const handleSaveSettings = useCallback((newSettings: Settings) => {
-    setSettings(newSettings)
-    emit<SaveSettingsHandler>('SAVE_SETTINGS', newSettings)
-  }, [])
-
-  const handleClearCache = useCallback(() => {
-    emit<ClearCacheHandler>('CLEAR_CACHE')
-  }, [])
+    // Preserve current iconOverrides in saved settings
+    const toSave = { ...newSettings, iconOverrides: iconOverrides }
+    setSettings(toSave)
+    emit<SaveSettingsHandler>('SAVE_SETTINGS', toSave)
+  }, [iconOverrides])
 
   const handleExport = useCallback((format: ExportFormat) => {
     const { dataURL, filename } = exportDescriptions(filteredComponents, format)
@@ -413,24 +301,21 @@ export function App({ scope, currentPageName }: AppProps) {
     setGenerateProgress({ current: 0, total: componentsToGenerate.length })
 
     let completed = 0
-    let currentIndex = 0
-    let cacheHitCount = 0
+
+    // BUG-002 fix: queue-based approach instead of shared index
+    const queue = [...componentsToGenerate]
 
     const processComponent = async (component: ComponentData) => {
       if (abortGenerateAllRef.current) return
 
       try {
-        const result = await handleGenerate(component)
-
-        if (result.fromCache) {
-          cacheHitCount++
-        }
+        const description = await handleGenerate(component)
 
         if (abortGenerateAllRef.current) return
 
         emit<ApplyDescriptionHandler>('APPLY_DESCRIPTION', {
           id: component.id,
-          description: result.description
+          description
         })
 
         setComponents((prev) =>
@@ -439,7 +324,7 @@ export function App({ scope, currentPageName }: AppProps) {
               ? {
                   ...c,
                   previousDescription: c.currentDescription,
-                  currentDescription: result.description
+                  currentDescription: description
                 }
               : c
           )
@@ -460,8 +345,7 @@ export function App({ scope, currentPageName }: AppProps) {
 
     const runWorker = async () => {
       while (!abortGenerateAllRef.current) {
-        const index = currentIndex++
-        const component = componentsToGenerate[index]
+        const component = queue.shift()
         if (!component) break
         await processComponent(component)
       }
@@ -554,10 +438,6 @@ export function App({ scope, currentPageName }: AppProps) {
         isGenerating={isGeneratingAll}
         hasApiKey={!!settings.apiKey}
         rowErrors={rowErrors}
-        cacheHits={cacheHits}
-        retryStatus={retryStatus}
-        onCancelRetry={handleCancelRetry}
-        usedProvider={usedProvider}
         iconOverrides={iconOverrides}
         onToggleIcon={handleToggleIcon}
       />

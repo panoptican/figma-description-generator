@@ -2,12 +2,7 @@ import { Button } from '@create-figma-plugin/ui'
 import { h } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 
-import { AIProvider, ComponentData } from '../types'
-
-interface RetryStatus {
-  attempt: number
-  maxAttempts: number
-}
+import { ComponentData } from '../types'
 
 interface ComponentRowProps {
   component: ComponentData
@@ -19,10 +14,6 @@ interface ComponentRowProps {
   isGenerating: boolean
   hasApiKey: boolean
   externalError?: string
-  fromCache?: boolean
-  retryStatus?: RetryStatus
-  onCancelRetry: (id: string) => void
-  usedProvider?: AIProvider
   isExpanded: boolean
   onToggleExpand: (id: string) => void
   isIcon: boolean
@@ -51,10 +42,6 @@ export function ComponentRow({
   isGenerating,
   hasApiKey,
   externalError,
-  fromCache,
-  retryStatus,
-  onCancelRetry,
-  usedProvider,
   isExpanded,
   onToggleExpand,
   isIcon,
@@ -65,8 +52,6 @@ export function ComponentRow({
   const [error, setError] = useState<string | null>(null)
   const [isDirty, setIsDirty] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const [lastFromCache, setLastFromCache] = useState<boolean | undefined>(undefined)
-  const [lastUsedProvider, setLastUsedProvider] = useState<AIProvider | undefined>(undefined)
   const rowRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -74,18 +59,6 @@ export function ComponentRow({
     setIsDirty(false)
     setIsSaving(false)
   }, [component.currentDescription])
-
-  useEffect(() => {
-    if (fromCache !== undefined) {
-      setLastFromCache(fromCache)
-    }
-  }, [fromCache])
-
-  useEffect(() => {
-    if (usedProvider !== undefined) {
-      setLastUsedProvider(usedProvider)
-    }
-  }, [usedProvider])
 
   useEffect(() => {
     if (!isDirty || description === component.currentDescription) {
@@ -121,7 +94,6 @@ export function ComponentRow({
   async function handleGenerate() {
     setLoading(true)
     setError(null)
-    setLastFromCache(undefined)
     try {
       const newDescription = await onGenerate(component)
       setDescription(newDescription)
@@ -147,7 +119,6 @@ export function ComponentRow({
   const typeAndProps = propertiesStr
     ? `${TYPE_LABELS[component.type]} · ${propertiesStr}`
     : TYPE_LABELS[component.type]
-
 
   // Collapsed state - single line
   if (!isExpanded) {
@@ -336,7 +307,6 @@ export function ComponentRow({
           setDescription((e.target as HTMLTextAreaElement).value)
           setIsDirty(true)
           setError(null)
-          setLastFromCache(undefined)
         }}
         onClick={(e) => e.stopPropagation()}
         rows={2}
@@ -360,39 +330,6 @@ export function ComponentRow({
       {(error || externalError) && (
         <div style={{ color: 'var(--figma-color-text-danger)', marginTop: '4px', fontSize: '11px' }}>
           {error || externalError}
-        </div>
-      )}
-
-      {/* Retry status */}
-      {retryStatus && (
-        <div
-          style={{
-            marginTop: '4px',
-            fontSize: '11px',
-            color: 'var(--figma-color-text-warning)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}
-        >
-          <span>Retrying... attempt {retryStatus.attempt}/{retryStatus.maxAttempts}</span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onCancelRetry(component.id)
-            }}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--figma-color-text-danger)',
-              cursor: 'pointer',
-              padding: '0',
-              fontSize: '11px',
-              textDecoration: 'underline'
-            }}
-          >
-            Cancel
-          </button>
         </div>
       )}
 

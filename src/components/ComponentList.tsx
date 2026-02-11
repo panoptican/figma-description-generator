@@ -2,13 +2,8 @@ import { Muted, Text } from '@create-figma-plugin/ui'
 import { h } from 'preact'
 import { useState } from 'preact/hooks'
 
-import { AIProvider, ComponentData } from '../types'
+import { ComponentData } from '../types'
 import { ComponentRow } from './ComponentRow'
-
-interface RetryStatus {
-  attempt: number
-  maxAttempts: number
-}
 
 interface ComponentListProps {
   components: ComponentData[]
@@ -19,11 +14,7 @@ interface ComponentListProps {
   isGenerating: boolean
   hasApiKey: boolean
   rowErrors: Record<string, string | undefined>
-  cacheHits: Record<string, boolean>
-  retryStatus: Record<string, RetryStatus | undefined>
   onSelect: (id: string) => void
-  onCancelRetry: (id: string) => void
-  usedProvider: Record<string, AIProvider | undefined>
   iconOverrides: Record<string, boolean>
   onToggleIcon: (id: string) => void
 }
@@ -37,11 +28,7 @@ export function ComponentList({
   isGenerating,
   hasApiKey,
   rowErrors,
-  cacheHits,
-  retryStatus,
   onSelect,
-  onCancelRetry,
-  usedProvider,
   iconOverrides,
   onToggleIcon
 }: ComponentListProps) {
@@ -105,7 +92,6 @@ export function ComponentList({
 
         // Check if all rows in this page are expanded
         const allRowsExpanded = pageComponents.every(c => expandedRows.has(c.id))
-        const anyRowsExpanded = pageComponents.some(c => expandedRows.has(c.id))
 
         return (
           <div key={pageName}>
@@ -213,10 +199,6 @@ export function ComponentList({
                   isGenerating={isGenerating}
                   hasApiKey={hasApiKey}
                   externalError={rowErrors[component.id]}
-                  fromCache={cacheHits[component.id]}
-                  retryStatus={retryStatus[component.id]}
-                  onCancelRetry={onCancelRetry}
-                  usedProvider={usedProvider[component.id]}
                   isExpanded={expandedRows.has(component.id)}
                   onToggleExpand={handleToggleExpand}
                   isIcon={iconOverrides[component.id] ?? component.isIcon ?? false}

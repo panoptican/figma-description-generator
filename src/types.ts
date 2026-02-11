@@ -15,12 +15,6 @@ export interface ComponentData {
   isIcon?: boolean
 }
 
-export interface ProviderConfig {
-  provider: AIProvider
-  apiKey: string
-  enabled: boolean
-}
-
 export interface Settings {
   provider: AIProvider
   apiKey: string
@@ -30,9 +24,7 @@ export interface Settings {
   includeImage: boolean
   showVariants: boolean
   overwriteExisting: boolean
-  // Fallback chain configuration
-  providerChain?: ProviderConfig[]
-  enableFallback?: boolean
+  iconOverrides?: Record<string, boolean>
 }
 
 export interface LoadComponentsHandler extends EventHandler {
@@ -93,45 +85,4 @@ export interface ExportImageHandler extends EventHandler {
 export interface ImageExportedHandler extends EventHandler {
   name: 'IMAGE_EXPORTED'
   handler: (data: { id: string; imageBase64: string | null }) => void
-}
-
-// Cache-related types and handlers
-export interface CacheEntry {
-  description: string
-  timestamp: number
-}
-
-export interface CacheData {
-  entries: Record<string, CacheEntry>
-  documentId: string
-}
-
-export interface LoadCacheHandler extends EventHandler {
-  name: 'LOAD_CACHE'
-  handler: () => void
-}
-
-export interface CacheLoadedHandler extends EventHandler {
-  name: 'CACHE_LOADED'
-  handler: (data: CacheData) => void
-}
-
-export interface SaveCacheHandler extends EventHandler {
-  name: 'SAVE_CACHE'
-  handler: (data: CacheData) => void
-}
-
-export interface CacheSavedHandler extends EventHandler {
-  name: 'CACHE_SAVED'
-  handler: () => void
-}
-
-export interface ClearCacheHandler extends EventHandler {
-  name: 'CLEAR_CACHE'
-  handler: () => void
-}
-
-export interface CacheClearedHandler extends EventHandler {
-  name: 'CACHE_CLEARED'
-  handler: () => void
 }
