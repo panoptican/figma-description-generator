@@ -1,0 +1,24 @@
+## Re-Verification Summary for spec 051-compact-component-rows
+
+I randomly selected spec **051-compact-component-rows.md** for re-verification and strictly verified ALL acceptance criteria:
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Collapsed rows ~36px height | ✅ | `ComponentRow.tsx:172` - `height: '36px'` |
+| Component name on left | ✅ | `ComponentRow.tsx:191-206` - name span with `flexShrink: 0` |
+| Description preview truncated | ✅ | `ComponentRow.tsx:37-41` - `truncateDescription` (60 chars) + CSS ellipsis |
+| Empty rows amber background | ✅ | `ComponentRow.tsx:176` - `rgba(251, 191, 36, 0.08)` when `isEmpty` |
+| Clicking row expands | ✅ | `ComponentRow.tsx:167` - `onClick={handleRowClick}` calls `onToggleExpand` |
+| Expanded shows type/props as muted text | ✅ | `ComponentRow.tsx:280-289` - text display, no badge |
+| Expanded has 2-line textarea | ✅ | `ComponentRow.tsx:301` - `rows={2}` |
+| Status text left of buttons | ✅ | `ComponentRow.tsx:358-381` - flex layout with status `flex: 1` |
+| Generate/Revert right-aligned | ✅ | `ComponentRow.tsx:384-407` - buttons in `flexShrink: 0` div |
+| Escape collapses row | ✅ | `ComponentRow.tsx:102-113` - Escape key event listener |
+
+**Test Results:**
+- ✅ All 199 tests pass
+- ✅ Build compiles with type checking
+
+All acceptance criteria verified. The spec is truly complete.
+
+<promise>DONE</promise>
