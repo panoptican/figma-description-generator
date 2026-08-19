@@ -16,7 +16,7 @@ npm run watch    # Watch mode for development
 ## Tech Stack
 
 - **Framework:** Preact + TypeScript
-- **Build:** create-figma-plugin toolchain
+- **Build:** create-figma-plugin 4.0.3 toolchain
 - **Target:** Figma Plugin API
 
 ## Architecture
@@ -63,7 +63,14 @@ Settings are stored per-user in Figma and include:
 
 ## Testing
 
-No automated tests. Validate by:
+Run the automated suite and build before manual Figma validation:
+
+```bash
+npm test
+npm run build
+```
+
+Then validate by:
 1. Run `npm run watch`
 2. Load plugin in Figma development mode
 3. Test both "Current page" and "All pages" menu entries

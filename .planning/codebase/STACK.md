@@ -1,6 +1,6 @@
 # Technology Stack
 
-**Analysis Date:** 2026-02-24
+**Analysis Date:** 2026-08-19
 
 ## Languages
 
@@ -29,18 +29,16 @@
 - @create-figma-plugin/utilities 3.2.0 - Event emission and plugin utilities (emit/on messaging)
 
 **Build/Dev:**
-- @create-figma-plugin/build 3.2.0 - Custom build tool for Figma plugins with typecheck and minify support
+- @create-figma-plugin/build 4.0.3 - Custom build tool for Figma plugins with typecheck and minify support
 - @create-figma-plugin/tsconfig 3.2.0 - Shared TypeScript configuration for Figma plugins
 
 **Testing:**
 - Vitest 4.0.18 - Test runner for unit and integration tests
-- @vitest/coverage-v8 4.0.18 - Code coverage reporting
 
 ## Key Dependencies
 
 **Critical:**
 - @figma/plugin-typings 1.98.0 - Type definitions for Figma Plugin API (figma global, component nodes, etc.)
-- agentation-mcp 1.1.1 - MCP integration library (listed in dependencies but usage not evident in codebase; likely for future AI integration)
 
 **Infrastructure:**
 - No database ORM or external service client libraries - API calls made directly via `fetch()` to three AI providers

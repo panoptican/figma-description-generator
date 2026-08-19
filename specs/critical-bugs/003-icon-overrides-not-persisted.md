@@ -3,8 +3,7 @@
 ## Priority
 🟡 **High**
 
-## Status
-Open
+## Status: COMPLETE
 
 ## Description
 When users manually toggle icon mode for specific components using the "Icon" button, these overrides are stored in component state but not persisted to settings. Closing and reopening the plugin loses all manual icon mode selections.
@@ -91,3 +90,6 @@ None
 
 ## Notes
 Alternative approach: Store overrides in component-level plugin data using `setPluginData()`, but this requires main thread access and is more complex. Settings storage is simpler and more consistent with current architecture.
+
+## Implementation Notes
+Icon overrides are included in persisted settings and restored when the app loads. Verify persistence across a close-and-reopen cycle in Figma before publishing.

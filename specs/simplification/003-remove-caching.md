@@ -3,8 +3,7 @@
 ## Priority
 🟢 **Medium**
 
-## Status
-Open
+## Status: COMPLETE
 
 ## Type
 Simplification / Code Removal
@@ -190,3 +189,6 @@ Instead of removing cache, we could improve cache invalidation:
 - Adds image export overhead even when not using images
 - Marginal improvement over current issues
 - Simpler to just remove it
+
+## Implementation Notes
+The active runtime has no description cache; initialization removes the legacy `description-cache` setting left by earlier versions.

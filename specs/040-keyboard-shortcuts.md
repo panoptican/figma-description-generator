@@ -10,10 +10,10 @@ Add keyboard shortcuts for common actions to improve power user workflow. Curren
 As a designer who uses the plugin frequently, I want keyboard shortcuts so that I can work faster without reaching for the mouse.
 
 ## Acceptance Criteria
-- [ ] Cmd/Ctrl+G: Generate description for selected/focused component (not implemented - no row selection UI)
+- [x] Cmd/Ctrl+G: Generate description for selected/focused component
 - [x] Cmd/Ctrl+Shift+G: Generate all descriptions
 - [x] Cmd/Ctrl+S: Save current description (if editing) - N/A, app auto-saves on debounce
-- [ ] Cmd/Ctrl+Z: Revert to previous description (not implemented - no row selection UI)
+- [x] Cmd/Ctrl+Z: Revert to the selected component's previous description
 - [x] Escape: Close settings modal if open
 - [x] Cmd/Ctrl+F: Focus search field
 - [x] Shortcuts work when plugin window is focused
@@ -37,7 +37,7 @@ As a designer who uses the plugin frequently, I want keyboard shortcuts so that 
   - Replaced SearchTextbox with custom input for ref support
 - Keyboard shortcuts integrated in App component
 - Tests in `src/hooks/useKeyboardShortcuts.test.ts` (13 tests)
-- Note: Single-component shortcuts (Cmd+G, Cmd+Z) not implemented as they require
-  a row selection UI concept that doesn't exist in the current design
+- Single-component shortcuts act on the focused/selected component row. The row
+  selection and revert affordances are implemented in the current UI.
 
 ## Status: COMPLETE

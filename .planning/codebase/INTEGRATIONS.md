@@ -1,6 +1,6 @@
 # External Integrations
 
-**Analysis Date:** 2026-02-24
+**Analysis Date:** 2026-08-19
 
 ## APIs & External Services
 
@@ -9,8 +9,8 @@
   - What it's used for: Generate component descriptions and icon names
   - SDK/Client: Native `fetch()` implementation
   - Auth: Bearer token (user-provided API key)
-  - Endpoint: `https://api.openai.com/v1/chat/completions`
-  - Model: `gpt-4o-mini` (256 token max)
+  - Endpoint: `https://api.openai.com/v1/responses`
+  - Model: `gpt-5.6-luna` (256 output token max)
   - Image Support: Yes (base64 PNG)
 
 - Google Gemini
@@ -20,7 +20,7 @@
   - Endpoints:
     - Generation: `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`
     - Validation: `https://generativelanguage.googleapis.com/v1beta/models`
-  - Models: `gemini-1.5-flash` (with images), `gemini-pro` (text only)
+  - Model: `gemini-3.6-flash` (text and images)
   - Image Support: Yes (base64 PNG)
 
 - Anthropic Claude
@@ -28,7 +28,7 @@
   - SDK/Client: Native `fetch()` implementation
   - Auth: Custom header `x-api-key` (user-provided)
   - Endpoint: `https://api.anthropic.com/v1/messages`
-  - Model: `claude-3-haiku-20240307` (256 token max)
+  - Model: `claude-haiku-4-5` (256 token max)
   - Headers: Includes `anthropic-dangerous-direct-browser-access: true` for browser context
   - Image Support: Yes (base64 PNG)
 

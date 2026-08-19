@@ -3,8 +3,7 @@
 ## Priority
 🔴 **Critical**
 
-## Status
-Open
+## Status: COMPLETE
 
 ## Description
 The image export system uses a single ref to store promise resolvers, causing race conditions when multiple components request image exports concurrently. The second request overwrites the first resolver, causing the first promise to never resolve.
@@ -74,3 +73,6 @@ None
 
 ## Related Issues
 - BUG-002 (concurrent generation race - different issue but similar pattern)
+
+## Implementation Notes
+Image export resolvers are stored in a `Map` keyed by component ID, so concurrent exports resolve independently. Verify the end-to-end export flow in Figma before publishing.

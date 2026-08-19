@@ -3,8 +3,7 @@
 ## Priority
 🟢 **Medium**
 
-## Status
-Open
+## Status: COMPLETE
 
 ## Type
 Simplification / Code Removal
@@ -108,3 +107,6 @@ Release notes should explain:
 - Fallback chain removed for simplicity
 - Users should ensure their primary provider API key is valid
 - Can manually switch providers if one fails
+
+## Implementation Notes
+The single-provider flow and legacy settings migration are implemented; fallback modules and UI state are no longer part of the runtime.

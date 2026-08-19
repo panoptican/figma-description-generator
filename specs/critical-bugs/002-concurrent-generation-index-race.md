@@ -3,8 +3,7 @@
 ## Priority
 🔴 **Critical**
 
-## Status
-Open
+## Status: COMPLETE
 
 ## Description
 The "Generate All" worker system uses a shared `currentIndex` variable without proper synchronization, leading to race conditions where multiple workers may process the same component or skip components entirely.
@@ -94,3 +93,6 @@ None
 
 ## Notes
 This bug is subtle and may not manifest obviously in small documents (<20 components). Most likely to occur with 50+ components and high concurrency.
+
+## Implementation Notes
+Generate All now uses a queue-based worker pool, preventing duplicate or skipped indexes while retaining bounded concurrency. Verify a large document manually in Figma before publishing.

@@ -3,8 +3,7 @@
 ## Priority
 🟢 **Medium**
 
-## Status
-Open
+## Status: COMPLETE
 
 ## Type
 Simplification / Code Removal
@@ -145,3 +144,6 @@ Release notes:
 
 ## Migration Notes
 No settings migration needed - retry was not configurable by users.
+
+## Implementation Notes
+Provider calls fail immediately and the row-level Generate action provides the manual retry path. Verify the user-visible error and retry flow in Figma before publishing.
