@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "AI-powered description generator for Figma components",
   "license": "MIT",
+  "engines": {
+    "node": ">=24.0.0 <26.0.0"
+  },
   "scripts": {
     "build": "build-figma-plugin --typecheck --minify",
     "watch": "build-figma-plugin --typecheck --watch",
@@ -12,14 +15,12 @@
   "dependencies": {
     "@create-figma-plugin/ui": "^3.2.0",
     "@create-figma-plugin/utilities": "^3.2.0",
-    "agentation-mcp": "^1.1.1",
     "preact": "^10.19.3"
   },
   "devDependencies": {
-    "@create-figma-plugin/build": "^3.2.0",
+    "@create-figma-plugin/build": "^4.0.3",
     "@create-figma-plugin/tsconfig": "^3.2.0",
     "@figma/plugin-typings": "^1.98.0",
-    "@vitest/coverage-v8": "^4.0.18",
     "typescript": "^5.3.3",
     "vitest": "^4.0.18"
   },
@@ -29,6 +30,13 @@
     ],
     "id": "description-generator",
     "name": "Description Generator",
+    "networkAccess": {
+      "allowedDomains": [
+        "https://api.openai.com",
+        "https://api.anthropic.com",
+        "https://generativelanguage.googleapis.com"
+      ]
+    },
     "menu": [
       {
         "name": "Current page",
