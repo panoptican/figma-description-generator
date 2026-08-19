@@ -1,5 +1,9 @@
 import { AIProvider } from '../types'
 
+export const GEMINI_MODEL = 'gemini-3.6-flash'
+export const CLAUDE_MODEL = 'claude-haiku-4-5'
+export const OPENAI_MODEL = 'gpt-5.6-luna'
+
 export const DEFAULT_PROMPT = `Write a brief description for a design system component.
 
 Component name: {name}
@@ -102,9 +106,8 @@ async function generateWithGemini(
   }
   parts.push({ text: prompt })
 
-  const model = imageBase64 ? 'gemini-1.5-flash' : 'gemini-pro'
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: {
@@ -162,7 +165,7 @@ async function generateWithClaude(
       'anthropic-dangerous-direct-browser-access': 'true'
     },
     body: JSON.stringify({
-      model: 'claude-3-haiku-20240307',
+      model: CLAUDE_MODEL,
       max_tokens: 256,
       messages: [{
         role: 'user',
@@ -191,31 +194,29 @@ async function generateWithChatGPT(
   prompt: string,
   imageBase64?: string
 ): Promise<string> {
-  type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
-  let content: string | ContentPart[] = prompt
+  type ContentPart =
+    | { type: 'input_text'; text: string }
+    | { type: 'input_image'; image_url: string }
+  const content: ContentPart[] = []
 
   if (imageBase64) {
-    content = [
-      {
-        type: 'image_url',
-        image_url: {
-          url: `data:image/png;base64,${imageBase64}`
-        }
-      },
-      { type: 'text', text: prompt }
-    ]
+    content.push({
+      type: 'input_image',
+      image_url: `data:image/png;base64,${imageBase64}`
+    })
   }
+  content.push({ type: 'input_text', text: prompt })
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      max_tokens: 256,
-      messages: [{
+      model: OPENAI_MODEL,
+      max_output_tokens: 256,
+      input: [{
         role: 'user',
         content
       }]
@@ -228,7 +229,9 @@ async function generateWithChatGPT(
   }
 
   const data = await response.json()
-  const text = data.choices?.[0]?.message?.content
+  const text = data.output_text || data.output
+    ?.flatMap((item: { content?: Array<{ type?: string; text?: string }> }) => item.content || [])
+    .find((item: { type?: string; text?: string }) => item.type === 'output_text')?.text
 
   if (!text) {
     throw new Error('No response from ChatGPT')

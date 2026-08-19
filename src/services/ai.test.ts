@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest'
-import { buildPrompt, DEFAULT_PROMPT, DEFAULT_VARIANT_PROMPT } from './ai'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  buildPrompt,
+  CLAUDE_MODEL,
+  DEFAULT_PROMPT,
+  DEFAULT_VARIANT_PROMPT,
+  generateDescription,
+  GEMINI_MODEL,
+  OPENAI_MODEL
+} from './ai'
 
 describe('buildPrompt', () => {
   describe('component prompts', () => {
@@ -109,5 +117,106 @@ describe('DEFAULT_VARIANT_PROMPT', () => {
 
   it('includes style guidance', () => {
     expect(DEFAULT_VARIANT_PROMPT).toContain('1 sentence')
+  })
+})
+
+describe('generateDescription', () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    globalThis.fetch = originalFetch
+  })
+
+  it('returns trimmed ChatGPT response text', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ output_text: '  Generates a clear action label.  ' })
+    } as Response)
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const result = await generateDescription('chatgpt', 'key', 'Button', 'COMPONENT', ['size'])
+
+    expect(result).toBe('Generates a clear action label.')
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, request] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('https://api.openai.com/v1/responses')
+    expect(JSON.parse(request.body as string).model).toBe(OPENAI_MODEL)
+  })
+
+  it('throws when Gemini returns no text content', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        candidates: [{ content: { parts: [{}] } }]
+      })
+    } as Response)
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(
+      generateDescription('gemini', 'key', 'Alert', 'COMPONENT', ['tone'])
+    ).rejects.toThrow('No response from Gemini')
+  })
+
+  it('throws provider-prefixed errors for Claude HTTP failures', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      text: async () => 'rate limit exceeded'
+    } as Response)
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(
+      generateDescription('claude', 'key', 'Badge', 'COMPONENT', ['size'])
+    ).rejects.toThrow('Claude API error: rate limit exceeded')
+  })
+
+  it('sends image payload to ChatGPT when imageBase64 is provided', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        output_text: 'Icon aliases.'
+      })
+    } as Response)
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await generateDescription(
+      'chatgpt',
+      'key',
+      'Arrow',
+      'COMPONENT',
+      [],
+      undefined,
+      undefined,
+      undefined,
+      'abc123'
+    )
+
+    const [, request] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const parsedBody = JSON.parse(request.body as string)
+    expect(parsedBody.model).toBe(OPENAI_MODEL)
+    const messageContent = parsedBody.input[0].content as Array<Record<string, unknown>>
+
+    expect(Array.isArray(messageContent)).toBe(true)
+    expect(messageContent[0]?.type).toBe('input_image')
+    expect((messageContent[0]?.image_url as string)).toContain('data:image/png;base64,abc123')
+  })
+
+  it('uses current model identifiers for Gemini and Claude', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ candidates: [{ content: { parts: [{ text: 'A description.' }] } }] })
+    } as Response)
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await generateDescription('gemini', 'key', 'Card', 'COMPONENT', [])
+    expect(fetchMock.mock.calls[0][0]).toContain(`/models/${GEMINI_MODEL}:generateContent`)
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ content: [{ text: 'A description.' }] })
+    } as Response)
+    await generateDescription('claude', 'key', 'Card', 'COMPONENT', [])
+    const claudeBody = JSON.parse(fetchMock.mock.calls[1][1].body as string)
+    expect(claudeBody.model).toBe(CLAUDE_MODEL)
   })
 })

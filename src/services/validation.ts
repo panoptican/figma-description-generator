@@ -1,4 +1,5 @@
 import { AIProvider } from '../types'
+import { CLAUDE_MODEL } from './ai'
 
 export type ValidationStatus = 'idle' | 'validating' | 'valid' | 'invalid'
 
@@ -74,7 +75,7 @@ async function validateClaude(apiKey: string, signal: AbortSignal): Promise<Vali
       'anthropic-dangerous-direct-browser-access': 'true'
     },
     body: JSON.stringify({
-      model: 'claude-3-haiku-20240307',
+      model: CLAUDE_MODEL,
       max_tokens: 1,
       messages: [{
         role: 'user',
