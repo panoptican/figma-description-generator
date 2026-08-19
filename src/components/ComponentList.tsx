@@ -11,8 +11,11 @@ interface ComponentListProps {
   onConfirm: (id: string, description: string) => void
   onReject: (id: string) => void
   onRevert: (id: string) => void
+  selectedRowId: string | null
+  onRowSelect: (id: string) => void
   isGenerating: boolean
   hasApiKey: boolean
+  providerLabel: string
   rowErrors: Record<string, string | undefined>
   onSelect: (id: string) => void
   iconOverrides: Record<string, boolean>
@@ -25,8 +28,11 @@ export function ComponentList({
   onConfirm,
   onReject,
   onRevert,
+  selectedRowId,
+  onRowSelect,
   isGenerating,
   hasApiKey,
+  providerLabel,
   rowErrors,
   onSelect,
   iconOverrides,
@@ -46,6 +52,7 @@ export function ComponentList({
   }
 
   function handleToggleExpand(id: string) {
+    onRowSelect(id)
     setExpandedRows((prev) => {
       const next = new Set(prev)
       if (next.has(id)) {
@@ -196,8 +203,11 @@ export function ComponentList({
                   onReject={onReject}
                   onRevert={onRevert}
                   onSelect={onSelect}
+                  isSelected={selectedRowId === component.id}
+                  onRowSelect={onRowSelect}
                   isGenerating={isGenerating}
                   hasApiKey={hasApiKey}
+                  providerLabel={providerLabel}
                   externalError={rowErrors[component.id]}
                   isExpanded={expandedRows.has(component.id)}
                   onToggleExpand={handleToggleExpand}

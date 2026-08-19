@@ -18,7 +18,13 @@ import {
   SettingsSavedHandler,
   SelectComponentHandler
 } from '../types'
-import { generateDescription, DEFAULT_PROMPT, DEFAULT_VARIANT_PROMPT, DEFAULT_ICON_PROMPT } from '../services/ai'
+import {
+  generateDescription,
+  DEFAULT_PROMPT,
+  DEFAULT_VARIANT_PROMPT,
+  DEFAULT_ICON_PROMPT,
+  getProviderDisplayName
+} from '../services/ai'
 import { exportDescriptions, ExportFormat } from '../utils/export'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { Header } from './Header'
@@ -52,6 +58,7 @@ export function App({ scope, currentPageName }: AppProps) {
   const [isGeneratingAll, setIsGeneratingAll] = useState(false)
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: 0 })
   const [rowErrors, setRowErrors] = useState<Record<string, string | undefined>>({})
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
   const [iconOverrides, setIconOverrides] = useState<Record<string, boolean>>({})
   const abortGenerateAllRef = useRef(false)
   // BUG-001 fix: Map of resolvers keyed by component ID instead of single ref
@@ -155,6 +162,20 @@ export function App({ scope, currentPageName }: AppProps) {
   const exportCount = filteredComponents.filter(
     (c) => c.currentDescription && c.currentDescription.trim().length > 0
   ).length
+  const selectedComponent = useMemo(
+    () => filteredComponents.find((component) => component.id === selectedRowId) ?? null,
+    [filteredComponents, selectedRowId]
+  )
+  const providerLabel = useMemo(() => getProviderDisplayName(settings.provider), [settings.provider])
+
+  useEffect(() => {
+    if (selectedRowId === null) {
+      return
+    }
+    if (!filteredComponents.some((component) => component.id === selectedRowId)) {
+      setSelectedRowId(null)
+    }
+  }, [filteredComponents, selectedRowId])
 
   const handleGenerate = useCallback(
     async (component: ComponentData): Promise<string> => {
@@ -363,6 +384,30 @@ export function App({ scope, currentPageName }: AppProps) {
     abortGenerateAllRef.current = true
   }, [])
 
+  const handleGenerateSelected = useCallback(async () => {
+    if (!selectedComponent || !settings.apiKey || isGeneratingAll) {
+      return
+    }
+
+    try {
+      const description = await handleGenerate(selectedComponent)
+      handleConfirm(selectedComponent.id, description)
+    } catch (error) {
+      console.error(`Failed to generate for ${selectedComponent.name}:`, error)
+      setRowErrors((prev) => ({
+        ...prev,
+        [selectedComponent.id]: error instanceof Error ? error.message : 'Generation failed'
+      }))
+    }
+  }, [selectedComponent, settings.apiKey, isGeneratingAll, handleGenerate, handleConfirm])
+
+  const handleRevertSelected = useCallback(() => {
+    if (!selectedComponent) {
+      return
+    }
+    handleRevert(selectedComponent.id)
+  }, [selectedComponent, handleRevert])
+
   // Close any open modal
   const handleCloseModal = useCallback(() => {
     if (isSettingsOpen) {
@@ -380,6 +425,10 @@ export function App({ scope, currentPageName }: AppProps) {
           handleGenerateAll()
         }
       },
+      onGenerateSingle: () => {
+        void handleGenerateSelected()
+      },
+      onRevert: handleRevertSelected,
       onCloseModal: handleCloseModal,
       onFocusSearch: () => {
         searchInputRef.current?.focus()
@@ -434,9 +483,15 @@ export function App({ scope, currentPageName }: AppProps) {
         onConfirm={handleConfirm}
         onReject={handleReject}
         onRevert={handleRevert}
-        onSelect={(id) => emit<SelectComponentHandler>('SELECT_COMPONENT', { id })}
+        selectedRowId={selectedRowId}
+        onRowSelect={setSelectedRowId}
+        onSelect={(id) => {
+          setSelectedRowId(id)
+          emit<SelectComponentHandler>('SELECT_COMPONENT', { id })
+        }}
         isGenerating={isGeneratingAll}
         hasApiKey={!!settings.apiKey}
+        providerLabel={providerLabel}
         rowErrors={rowErrors}
         iconOverrides={iconOverrides}
         onToggleIcon={handleToggleIcon}

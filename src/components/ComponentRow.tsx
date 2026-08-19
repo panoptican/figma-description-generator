@@ -11,8 +11,11 @@ interface ComponentRowProps {
   onReject: (id: string) => void
   onRevert: (id: string) => void
   onSelect: (id: string) => void
+  isSelected: boolean
+  onRowSelect: (id: string) => void
   isGenerating: boolean
   hasApiKey: boolean
+  providerLabel: string
   externalError?: string
   isExpanded: boolean
   onToggleExpand: (id: string) => void
@@ -39,8 +42,11 @@ export function ComponentRow({
   onReject,
   onRevert,
   onSelect,
+  isSelected,
+  onRowSelect,
   isGenerating,
   hasApiKey,
+  providerLabel,
   externalError,
   isExpanded,
   onToggleExpand,
@@ -88,8 +94,49 @@ export function ComponentRow({
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [isExpanded, component.id, onToggleExpand])
 
+  // Collapse when clicking outside the expanded row.
+  useEffect(() => {
+    if (!isExpanded) return
+
+    function handleClickOutside(e: MouseEvent) {
+      if (rowRef.current === null) {
+        return
+      }
+      const target = e.target as Node | null
+      if (target !== null && !rowRef.current.contains(target)) {
+        onToggleExpand(component.id)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isExpanded, component.id, onToggleExpand])
+
   const hasDescription = !!component.currentDescription
   const isEmpty = !hasDescription
+  const collapsedBackgroundColor = isSelected
+    ? 'rgba(24, 160, 251, 0.12)'
+    : isEmpty
+      ? 'rgba(245, 158, 11, 0.08)'
+      : 'transparent'
+  const collapsedHoverBackgroundColor = isSelected
+    ? 'rgba(24, 160, 251, 0.18)'
+    : isEmpty
+      ? 'rgba(245, 158, 11, 0.14)'
+      : 'var(--figma-color-bg-hover)'
+  const sourceLabel = isIcon ? 'Icon prompt' : component.type === 'VARIANT' ? 'Variant prompt' : 'Default prompt'
+  const statusLabel =
+    error || externalError
+      ? 'Error'
+      : loading || isGenerating
+        ? 'Generating...'
+        : isSaving
+          ? 'Saving...'
+          : isDirty
+            ? 'Unsaved changes'
+            : isEmpty
+              ? 'Missing description'
+              : 'Ready'
 
   async function handleGenerate() {
     setLoading(true)
@@ -107,6 +154,7 @@ export function ComponentRow({
 
   function handleNameClick(e: MouseEvent) {
     e.stopPropagation()
+    onRowSelect(component.id)
     onSelect(component.id)
   }
 
@@ -135,14 +183,14 @@ export function ComponentRow({
           boxSizing: 'border-box',
           borderBottom: '1px solid var(--figma-color-border)',
           cursor: 'pointer',
-          backgroundColor: 'transparent',
+          backgroundColor: collapsedBackgroundColor,
           transition: 'background-color 0.15s'
         }}
         onMouseEnter={(e) => {
-          (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--figma-color-bg-hover)'
+          (e.currentTarget as HTMLElement).style.backgroundColor = collapsedHoverBackgroundColor
         }}
         onMouseLeave={(e) => {
-          (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
+          (e.currentTarget as HTMLElement).style.backgroundColor = collapsedBackgroundColor
         }}
       >
         {/* Status dot */}
@@ -231,7 +279,7 @@ export function ComponentRow({
       style={{
         padding: '12px 16px',
         borderBottom: '1px solid var(--figma-color-border)',
-        backgroundColor: 'var(--figma-color-bg-secondary)'
+        backgroundColor: isSelected ? 'rgba(24, 160, 251, 0.1)' : 'var(--figma-color-bg-secondary)'
       }}
     >
       {/* Header row - name and collapse indicator */}
@@ -333,30 +381,55 @@ export function ComponentRow({
         </div>
       )}
 
-      {/* Action buttons */}
-      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '8px' }}>
-        <Button
-          onClick={(e: MouseEvent) => {
-            e.stopPropagation()
-            handleGenerate()
+      {/* Status and action buttons */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '8px',
+          marginTop: '8px'
+        }}
+      >
+        <span
+          style={{
+            color: 'var(--figma-color-text-tertiary)',
+            fontSize: '11px',
+            lineHeight: '14px',
+            flex: 1,
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
           }}
-          disabled={loading || isGenerating || !hasApiKey}
-          loading={loading}
+          title={`Source: ${sourceLabel} · Provider: ${providerLabel} · Status: ${statusLabel}`}
         >
-          Generate
-        </Button>
-
-        {component.previousDescription && (
+          {`Source: ${sourceLabel} · Provider: ${providerLabel} · Status: ${statusLabel}`}
+        </span>
+        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
           <Button
             onClick={(e: MouseEvent) => {
               e.stopPropagation()
-              onRevert(component.id)
+              handleGenerate()
             }}
-            secondary
+            disabled={loading || isGenerating || !hasApiKey}
+            loading={loading}
           >
-            Revert
+            Generate
           </Button>
-        )}
+
+          {component.previousDescription && (
+            <Button
+              onClick={(e: MouseEvent) => {
+                e.stopPropagation()
+                onRevert(component.id)
+              }}
+              secondary
+            >
+              Revert
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   )
