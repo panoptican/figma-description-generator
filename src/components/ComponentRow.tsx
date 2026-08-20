@@ -142,7 +142,7 @@ export function ComponentRow({
       : descriptionStatus === 'existing'
         ? 'rgba(34, 197, 94, 0.06)'
         : 'var(--figma-color-bg-secondary)'
-  const sourceLabel = isIcon ? 'Icon prompt' : component.type === 'VARIANT' ? 'Variant prompt' : 'Default prompt'
+  const sourceLabel = isIcon ? 'Icon prompt' : component.type === 'VARIANT' ? 'Variant set prompt' : 'Default prompt'
   const statusLabel =
     error || externalError
       ? 'Error'
@@ -465,16 +465,18 @@ export function ComponentRow({
           {`Source: ${sourceLabel} · Provider: ${providerLabel} · Status: ${statusLabel}`}
         </span>
         <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-          <Button
-            onClick={(e: MouseEvent) => {
-              e.stopPropagation()
-              handleGenerate()
-            }}
-            disabled={loading || groupLoading || isGenerating || !hasApiKey}
-            loading={loading}
-          >
-            {component.type === 'COMPONENT_SET' ? 'Generate parent' : 'Generate'}
-          </Button>
+          {component.type !== 'VARIANT' && (
+            <Button
+              onClick={(e: MouseEvent) => {
+                e.stopPropagation()
+                handleGenerate()
+              }}
+              disabled={loading || groupLoading || isGenerating || !hasApiKey}
+              loading={loading}
+            >
+              {component.type === 'COMPONENT_SET' ? 'Generate parent' : 'Generate'}
+            </Button>
+          )}
 
           {component.type === 'COMPONENT_SET' && component.variantContext && component.variantContext.length > 0 && (
             <Button
@@ -489,6 +491,18 @@ export function ComponentRow({
             >
               Generate set
             </Button>
+          )}
+
+          {component.type === 'VARIANT' && (
+            <span
+              style={{
+                color: 'var(--figma-color-text-tertiary)',
+                fontSize: '11px',
+                alignSelf: 'center'
+              }}
+            >
+              Generate from “{component.parentName || 'component set'}”
+            </span>
           )}
 
           {component.previousDescription && (

@@ -48,6 +48,50 @@ const DEFAULT_SETTINGS: Settings = {
   overwriteExisting: false
 }
 
+interface GenerationBatch {
+  members: ComponentData[]
+}
+
+function getComponentSetMembers(components: ComponentData[], componentSet: ComponentData): ComponentData[] {
+  return components.filter((component) => (
+    component.id === componentSet.id || component.parentId === componentSet.id
+  ))
+}
+
+function getGenerationBatches(
+  components: ComponentData[],
+  filteredComponents: ComponentData[],
+  overwriteExisting: boolean
+): GenerationBatch[] {
+  const filteredIds = new Set(filteredComponents.map((component) => component.id))
+  const targets = components.filter((component) => {
+    if (component.type === 'VARIANT') {
+      return false
+    }
+
+    if (filteredIds.has(component.id)) {
+      return true
+    }
+
+    return component.type === 'COMPONENT_SET' && components.some((member) => (
+      member.parentId === component.id && filteredIds.has(member.id)
+    ))
+  })
+
+  return targets
+    .map((target) => {
+      const members = target.type === 'COMPONENT_SET'
+        ? getComponentSetMembers(components, target)
+        : [target]
+      const pendingMembers = overwriteExisting
+        ? members
+        : members.filter((member) => !member.currentDescription)
+
+      return { members: pendingMembers }
+    })
+    .filter((batch) => batch.members.length > 0)
+}
+
 export function App({ scope, currentPageName }: AppProps) {
   const [components, setComponents] = useState<ComponentData[]>([])
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
@@ -196,9 +240,8 @@ export function App({ scope, currentPageName }: AppProps) {
 
   const totalDisplayed = filteredComponents.length
   const missingCount = filteredComponents.filter((c) => !c.currentDescription).length
-  const generateCount = filteredComponents.filter(
-    (c) => settings.overwriteExisting || !c.currentDescription
-  ).length
+  const generationBatches = getGenerationBatches(components, filteredComponents, settings.overwriteExisting)
+  const generateCount = generationBatches.reduce((count, batch) => count + batch.members.length, 0)
   const exportCount = filteredComponents.filter(
     (c) => c.currentDescription && c.currentDescription.trim().length > 0
   ).length
@@ -298,9 +341,7 @@ export function App({ scope, currentPageName }: AppProps) {
   }, [])
 
   const handleGenerateComponentSet = useCallback(async (componentSet: ComponentData): Promise<void> => {
-    const members = components.filter((component) => (
-      component.id === componentSet.id || component.parentId === componentSet.id
-    ))
+    const members = getComponentSetMembers(components, componentSet)
     const failures: string[] = []
 
     for (const member of members) {
@@ -377,77 +418,79 @@ export function App({ scope, currentPageName }: AppProps) {
     setIsGeneratingAll(true)
     abortGenerateAllRef.current = false
 
-    const componentsToGenerate = filteredComponents.filter(
-      (c) => settings.overwriteExisting || !c.currentDescription
-    )
+    const batchesToGenerate = generationBatches
+    const totalToGenerate = batchesToGenerate.reduce((count, batch) => count + batch.members.length, 0)
 
-    if (componentsToGenerate.length === 0) {
+    if (totalToGenerate === 0) {
       setIsGeneratingAll(false)
       setGenerateProgress({ current: 0, total: 0 })
       return
     }
 
-    setGenerateProgress({ current: 0, total: componentsToGenerate.length })
+    setGenerateProgress({ current: 0, total: totalToGenerate })
 
     let completed = 0
 
-    // BUG-002 fix: queue-based approach instead of shared index
-    const queue = [...componentsToGenerate]
+    // BUG-002 fix: queue-based approach instead of shared index. Component sets
+    // remain atomic jobs while their members are generated sequentially.
+    const queue = [...batchesToGenerate]
 
-    const processComponent = async (component: ComponentData) => {
-      if (abortGenerateAllRef.current) return
-
-      try {
-        const description = await handleGenerate(component)
-
+    const processBatch = async (batch: GenerationBatch) => {
+      for (const component of batch.members) {
         if (abortGenerateAllRef.current) return
 
-        markGeneratedThisSession(component.id)
-        emit<ApplyDescriptionHandler>('APPLY_DESCRIPTION', {
-          id: component.id,
-          description
-        })
+        try {
+          const description = await handleGenerate(component)
 
-        setComponents((prev) =>
-          prev.map((c) =>
-            c.id === component.id
-              ? {
-                  ...c,
-                  previousDescription: c.currentDescription,
-                  currentDescription: description
-                }
-              : c
+          if (abortGenerateAllRef.current) return
+
+          markGeneratedThisSession(component.id)
+          emit<ApplyDescriptionHandler>('APPLY_DESCRIPTION', {
+            id: component.id,
+            description
+          })
+
+          setComponents((prev) =>
+            prev.map((c) =>
+              c.id === component.id
+                ? {
+                    ...c,
+                    previousDescription: c.currentDescription,
+                    currentDescription: description
+                  }
+                : c
+            )
           )
-        )
 
-        setRowErrors((prev) => ({ ...prev, [component.id]: undefined }))
-      } catch (error) {
-        console.error(`Failed to generate for ${component.name}:`, error)
-        setRowErrors((prev) => ({
-          ...prev,
-          [component.id]: error instanceof Error ? error.message : 'Generation failed'
-        }))
-      } finally {
-        completed += 1
-        setGenerateProgress({ current: completed, total: componentsToGenerate.length })
+          setRowErrors((prev) => ({ ...prev, [component.id]: undefined }))
+        } catch (error) {
+          console.error(`Failed to generate for ${component.name}:`, error)
+          setRowErrors((prev) => ({
+            ...prev,
+            [component.id]: error instanceof Error ? error.message : 'Generation failed'
+          }))
+        } finally {
+          completed += 1
+          setGenerateProgress({ current: completed, total: totalToGenerate })
+        }
       }
     }
 
     const runWorker = async () => {
       while (!abortGenerateAllRef.current) {
-        const component = queue.shift()
-        if (!component) break
-        await processComponent(component)
+        const batch = queue.shift()
+        if (!batch) break
+        await processBatch(batch)
       }
     }
 
-    const workerCount = Math.min(CONCURRENCY_LIMIT, componentsToGenerate.length || 1)
+    const workerCount = Math.min(CONCURRENCY_LIMIT, batchesToGenerate.length || 1)
     await Promise.all(Array.from({ length: workerCount }, runWorker))
 
     setIsGeneratingAll(false)
     setGenerateProgress({ current: 0, total: 0 })
     abortGenerateAllRef.current = false
-  }, [filteredComponents, settings, handleGenerate, markGeneratedThisSession])
+  }, [generationBatches, settings, handleGenerate, markGeneratedThisSession])
 
   const handleCancelGenerateAll = useCallback(() => {
     abortGenerateAllRef.current = true
@@ -459,6 +502,14 @@ export function App({ scope, currentPageName }: AppProps) {
     }
 
     try {
+      if (selectedComponent.type === 'VARIANT') {
+        const parent = components.find((component) => component.id === selectedComponent.parentId)
+        if (parent) {
+          await handleGenerateComponentSet(parent)
+        }
+        return
+      }
+
       const description = await handleGenerate(selectedComponent)
       markGeneratedThisSession(selectedComponent.id)
       handleConfirm(selectedComponent.id, description)
@@ -469,7 +520,7 @@ export function App({ scope, currentPageName }: AppProps) {
         [selectedComponent.id]: error instanceof Error ? error.message : 'Generation failed'
       }))
     }
-  }, [selectedComponent, settings.apiKey, isGeneratingAll, handleGenerate, markGeneratedThisSession, handleConfirm])
+  }, [selectedComponent, components, settings.apiKey, isGeneratingAll, handleGenerate, handleGenerateComponentSet, markGeneratedThisSession, handleConfirm])
 
   const handleRevertSelected = useCallback(() => {
     if (!selectedComponent) {
