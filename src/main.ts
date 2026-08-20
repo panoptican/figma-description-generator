@@ -20,7 +20,8 @@ import {
   SelectComponentHandler,
   Settings,
   SettingsLoadedHandler,
-  SettingsSavedHandler
+  SettingsSavedHandler,
+  VariantContext
 } from './types'
 
 const DEFAULT_SETTINGS: Settings = {
@@ -47,6 +48,12 @@ function getComponents(scope: Scope): ComponentData[] {
 
     for (const node of nodes) {
       if (node.type === 'COMPONENT_SET') {
+        const variants = node.children.filter((child) => child.type === 'COMPONENT')
+        const variantContext: VariantContext[] = variants.map((variant) => ({
+          name: variant.name,
+          properties: parseVariantName(variant.name)
+        }))
+
         components.push({
           id: node.id,
           name: node.name,
@@ -54,22 +61,23 @@ function getComponents(scope: Scope): ComponentData[] {
           properties: extractComponentSetProperties(node),
           currentDescription: node.description,
           pageName: page.name,
+          variantContext,
           isIcon: /^icon\b/i.test(node.name)
         })
 
-        for (const variant of node.children) {
-          if (variant.type === 'COMPONENT') {
-            components.push({
-              id: variant.id,
-              name: variant.name,
-              type: 'VARIANT',
-              properties: parseVariantName(variant.name),
-              currentDescription: variant.description,
-              pageName: page.name,
-              parentName: node.name,
-              isIcon: /^icon\b/i.test(node.name)
-            })
-          }
+        for (const variant of variants) {
+          components.push({
+            id: variant.id,
+            name: variant.name,
+            type: 'VARIANT',
+            properties: parseVariantName(variant.name),
+            currentDescription: variant.description,
+            pageName: page.name,
+            parentName: node.name,
+            parentId: node.id,
+            variantContext,
+            isIcon: /^icon\b/i.test(node.name)
+          })
         }
       } else if (node.type === 'COMPONENT') {
         const parent = node.parent

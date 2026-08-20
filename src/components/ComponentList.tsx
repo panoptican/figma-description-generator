@@ -8,6 +8,7 @@ import { ComponentRow } from './ComponentRow'
 interface ComponentListProps {
   components: ComponentData[]
   onGenerate: (component: ComponentData) => Promise<string>
+  onGenerateComponentSet: (component: ComponentData) => Promise<void>
   onGenerated: (id: string) => void
   onConfirm: (id: string, description: string) => void
   onReject: (id: string) => void
@@ -27,6 +28,7 @@ interface ComponentListProps {
 export function ComponentList({
   components,
   onGenerate,
+  onGenerateComponentSet,
   onGenerated,
   onConfirm,
   onReject,
@@ -203,6 +205,7 @@ export function ComponentList({
                   key={component.id}
                   component={component}
                   onGenerate={onGenerate}
+                  onGenerateComponentSet={onGenerateComponentSet}
                   onGenerated={onGenerated}
                   onConfirm={onConfirm}
                   onReject={onReject}

@@ -1,4 +1,4 @@
-import { AIProvider } from '../types'
+import { AIProvider, VariantContext } from '../types'
 
 export const GEMINI_MODEL = 'gemini-3.6-flash'
 export const CLAUDE_MODEL = 'claude-haiku-4-5'
@@ -14,6 +14,7 @@ Rules:
 - 1-2 sentences maximum
 - Never start with "This component" or "A component that"
 - Describe what it does and when to use it directly
+- When complete variant set context is provided, describe the range or variation the set defines
 - Write like Shopify Polaris documentation (e.g. "Displays a list of actions..." or "Provides navigation between pages...")
 
 Output only the description text.`
@@ -42,6 +43,7 @@ Rules:
 - 1 sentence maximum
 - Never start with "This variant" or "A variant that"
 - Explain what makes this variant different and when to use it
+- Use the complete variant set context to understand this variant's position and role in the set
 - Be direct (e.g. "Used for destructive actions like delete" or "Displays in a compact size for dense layouts")
 
 Output only the description text.`
@@ -66,36 +68,39 @@ export function buildPrompt(
   parentName?: string,
   customPrompt?: string,
   customVariantPrompt?: string,
-  options?: { isIcon?: boolean; customIconPrompt?: string }
+  options?: { isIcon?: boolean; customIconPrompt?: string },
+  variantContext?: VariantContext[]
 ): string {
   const propsString = properties.length > 0 ? properties.join(', ') : 'None'
+  let prompt: string
 
   if (options?.isIcon) {
     const template = options.customIconPrompt || DEFAULT_ICON_PROMPT
-    return addParentContext(
+    prompt = addParentContext(
       template
         .replace(/{icon_name}/g, componentName)
         .replace(/{parentName}/g, parentName || 'None'),
       template,
       parentName
     )
-  }
-
-  if (componentType === 'VARIANT') {
+  } else if (componentType === 'VARIANT') {
     const template = customVariantPrompt || DEFAULT_VARIANT_PROMPT
-    const prompt = template
+    prompt = addParentContext(template
       .replace(/{parentName}/g, parentName || 'Unknown parent component')
       .replace(/{name}/g, componentName)
+      .replace(/{properties}/g, propsString),
+      template,
+      parentName
+    )
+  } else {
+    const template = customPrompt || DEFAULT_PROMPT
+    prompt = template
+      .replace(/{name}/g, componentName)
+      .replace(/{type}/g, componentType)
       .replace(/{properties}/g, propsString)
-
-    return addParentContext(prompt, template, parentName)
   }
 
-  const template = customPrompt || DEFAULT_PROMPT
-  return template
-    .replace(/{name}/g, componentName)
-    .replace(/{type}/g, componentType)
-    .replace(/{properties}/g, propsString)
+  return options?.isIcon ? prompt : addVariantContext(prompt, variantContext)
 }
 
 function addParentContext(prompt: string, template: string, parentName?: string): string {
@@ -104,6 +109,21 @@ function addParentContext(prompt: string, template: string, parentName?: string)
   }
 
   return `${prompt}\n\nParent component: ${parentName}`
+}
+
+function addVariantContext(prompt: string, variantContext?: VariantContext[]): string {
+  if (!variantContext || variantContext.length === 0) {
+    return prompt
+  }
+
+  const variants = variantContext
+    .map(({ name, properties }) => {
+      const props = properties.length > 0 ? properties.join(', ') : 'No parsed properties'
+      return `- ${name}: ${props}`
+    })
+    .join('\n')
+
+  return `${prompt}\n\nComplete variant set context:\n${variants}`
 }
 
 async function generateWithGemini(
@@ -267,9 +287,19 @@ export async function generateDescription(
   customPrompt?: string,
   customVariantPrompt?: string,
   imageBase64?: string,
-  iconOptions?: { isIcon?: boolean; customIconPrompt?: string }
+  iconOptions?: { isIcon?: boolean; customIconPrompt?: string },
+  variantContext?: VariantContext[]
 ): Promise<string> {
-  const prompt = buildPrompt(componentName, componentType, properties, parentName, customPrompt, customVariantPrompt, iconOptions)
+  const prompt = buildPrompt(
+    componentName,
+    componentType,
+    properties,
+    parentName,
+    customPrompt,
+    customVariantPrompt,
+    iconOptions,
+    variantContext
+  )
 
   switch (provider) {
     case 'gemini':

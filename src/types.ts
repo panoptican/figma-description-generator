@@ -3,6 +3,11 @@ import { EventHandler } from '@create-figma-plugin/utilities'
 export type AIProvider = 'gemini' | 'claude' | 'chatgpt'
 export type Scope = 'current-page' | 'all-pages'
 
+export interface VariantContext {
+  name: string
+  properties: string[]
+}
+
 export interface ComponentData {
   id: string
   name: string
@@ -12,6 +17,8 @@ export interface ComponentData {
   previousDescription?: string
   pageName: string
   parentName?: string
+  parentId?: string
+  variantContext?: VariantContext[]
   isIcon?: boolean
 }
 

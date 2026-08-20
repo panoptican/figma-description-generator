@@ -90,6 +90,47 @@ describe('buildPrompt', () => {
 
       expect(result).toContain('Parent component: Mobile Tab Button')
     })
+
+    it('includes the complete variant set context for an individual variant', () => {
+      const result = buildPrompt(
+        'value=40',
+        'VARIANT',
+        ['value=40'],
+        'Spacing',
+        undefined,
+        undefined,
+        undefined,
+        [
+          { name: 'value=0', properties: ['value=0'] },
+          { name: 'value=4', properties: ['value=4'] },
+          { name: 'value=40', properties: ['value=40'] }
+        ]
+      )
+
+      expect(result).toContain('Complete variant set context:')
+      expect(result).toContain('- value=0: value=0')
+      expect(result).toContain('- value=40: value=40')
+    })
+
+    it('includes variant set context when describing the component set parent', () => {
+      const result = buildPrompt(
+        'Spacing',
+        'COMPONENT_SET',
+        ['value: 0, 4, 8, 16, 24, 32, 40'],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        [
+          { name: 'value=0', properties: ['value=0'] },
+          { name: 'value=40', properties: ['value=40'] }
+        ]
+      )
+
+      expect(result).toContain('Complete variant set context:')
+      expect(result).toContain('- value=0: value=0')
+      expect(result).toContain('- value=40: value=40')
+    })
   })
 
   describe('icon prompts', () => {
@@ -128,6 +169,21 @@ describe('buildPrompt', () => {
 
       expect(result).toContain('Parent component: None')
       expect(DEFAULT_ICON_PROMPT).toContain('{parentName}')
+    })
+
+    it('does not append variant-set context to icon prompts', () => {
+      const result = buildPrompt(
+        'value=40',
+        'VARIANT',
+        ['value=40'],
+        'Spacing icon',
+        undefined,
+        undefined,
+        { isIcon: true },
+        [{ name: 'value=40', properties: ['value=40'] }]
+      )
+
+      expect(result).not.toContain('Complete variant set context:')
     })
   })
 

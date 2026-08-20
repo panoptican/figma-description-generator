@@ -8,6 +8,7 @@ import { getDescriptionStatus } from '../utils/descriptionStatus'
 interface ComponentRowProps {
   component: ComponentData
   onGenerate: (component: ComponentData) => Promise<string>
+  onGenerateComponentSet: (component: ComponentData) => Promise<void>
   onGenerated: (id: string) => void
   onConfirm: (id: string, description: string) => void
   onReject: (id: string) => void
@@ -35,6 +36,7 @@ function truncateDescription(text: string | undefined, maxLength: number = 60): 
 export function ComponentRow({
   component,
   onGenerate,
+  onGenerateComponentSet,
   onConfirm,
   onReject,
   onRevert,
@@ -54,6 +56,7 @@ export function ComponentRow({
 }: ComponentRowProps) {
   const [description, setDescription] = useState(component.currentDescription)
   const [loading, setLoading] = useState(false)
+  const [groupLoading, setGroupLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isDirty, setIsDirty] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -143,7 +146,7 @@ export function ComponentRow({
   const statusLabel =
     error || externalError
       ? 'Error'
-      : loading || isGenerating
+      : loading || groupLoading || isGenerating
         ? 'Generating...'
         : isSaving
           ? 'Saving...'
@@ -167,6 +170,18 @@ export function ComponentRow({
       setError(err instanceof Error ? err.message : 'Failed to generate')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleGenerateComponentSet() {
+    setGroupLoading(true)
+    setError(null)
+    try {
+      await onGenerateComponentSet(component)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate component set')
+    } finally {
+      setGroupLoading(false)
     }
   }
 
@@ -455,11 +470,26 @@ export function ComponentRow({
               e.stopPropagation()
               handleGenerate()
             }}
-            disabled={loading || isGenerating || !hasApiKey}
+            disabled={loading || groupLoading || isGenerating || !hasApiKey}
             loading={loading}
           >
-            Generate
+            {component.type === 'COMPONENT_SET' ? 'Generate parent' : 'Generate'}
           </Button>
+
+          {component.type === 'COMPONENT_SET' && component.variantContext && component.variantContext.length > 0 && (
+            <Button
+              onClick={(e: MouseEvent) => {
+                e.stopPropagation()
+                handleGenerateComponentSet()
+              }}
+              disabled={groupLoading || loading || isGenerating || !hasApiKey}
+              loading={groupLoading}
+              title="Generate descriptions for this parent and every variant"
+              secondary
+            >
+              Generate set
+            </Button>
+          )}
 
           {component.previousDescription && (
             <Button

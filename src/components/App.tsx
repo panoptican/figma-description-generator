@@ -239,7 +239,8 @@ export function App({ scope, currentPageName }: AppProps) {
         settings.customPrompt || undefined,
         settings.customVariantPrompt || undefined,
         imageBase64,
-        { isIcon, customIconPrompt: settings.customIconPrompt || undefined }
+        { isIcon, customIconPrompt: settings.customIconPrompt || undefined },
+        component.variantContext
       )
 
       return description
@@ -295,6 +296,32 @@ export function App({ scope, currentPageName }: AppProps) {
     )
     setRowErrors((prev) => ({ ...prev, [id]: undefined }))
   }, [])
+
+  const handleGenerateComponentSet = useCallback(async (componentSet: ComponentData): Promise<void> => {
+    const members = components.filter((component) => (
+      component.id === componentSet.id || component.parentId === componentSet.id
+    ))
+    const failures: string[] = []
+
+    for (const member of members) {
+      try {
+        const description = await handleGenerate(member)
+        markGeneratedThisSession(member.id)
+        handleConfirm(member.id, description)
+      } catch (error) {
+        console.error(`Failed to generate for ${member.name}:`, error)
+        failures.push(member.name)
+        setRowErrors((prev) => ({
+          ...prev,
+          [member.id]: error instanceof Error ? error.message : 'Generation failed'
+        }))
+      }
+    }
+
+    if (failures.length > 0) {
+      throw new Error(`Failed to generate: ${failures.join(', ')}`)
+    }
+  }, [components, handleGenerate, markGeneratedThisSession, handleConfirm])
 
   const handleReject = useCallback((id: string) => {
     // Reset is handled in ComponentRow
@@ -526,6 +553,7 @@ export function App({ scope, currentPageName }: AppProps) {
       <ComponentList
         components={filteredComponents}
         onGenerate={handleGenerateForRow}
+        onGenerateComponentSet={handleGenerateComponentSet}
         onGenerated={markGeneratedThisSession}
         onConfirm={handleConfirm}
         onReject={handleReject}
