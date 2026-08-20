@@ -10,7 +10,10 @@ interface HeaderProps {
   onGenerateAllClick: () => void
   onCancelClick: () => void
   onExportClick: () => void
+  onRefreshClick: () => void
+  refreshTitle: string
   isGenerating: boolean
+  isRefreshing: boolean
   hasApiKey: boolean
   progress: { current: number; total: number }
   generateCount: number
@@ -25,7 +28,10 @@ export function Header({
   onGenerateAllClick,
   onCancelClick,
   onExportClick,
+  onRefreshClick,
+  refreshTitle,
   isGenerating,
+  isRefreshing,
   hasApiKey,
   progress,
   generateCount,
@@ -52,6 +58,15 @@ export function Header({
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
       <polyline points="7 10 12 15 17 10" />
       <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  )
+
+  const RefreshIcon = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 11a8.1 8.1 0 0 0-14.7-3L3 11" />
+      <path d="M3 4v7h7" />
+      <path d="M4 13a8.1 8.1 0 0 0 14.7 3L21 13" />
+      <path d="M21 20v-7h-7" />
     </svg>
   )
 
@@ -160,6 +175,24 @@ export function Header({
           <SparkleIcon /> Generate All ({generateCount})
         </button>
       )}
+
+      {/* Refresh component scan */}
+      <button
+        onClick={onRefreshClick}
+        disabled={isRefreshing || isGenerating}
+        aria-label={refreshTitle}
+        title={isRefreshing ? 'Refreshing components...' : refreshTitle}
+        style={{
+          ...iconButtonStyle,
+          color: isRefreshing || isGenerating
+            ? 'var(--figma-color-text-disabled)'
+            : 'var(--figma-color-text)',
+          cursor: isRefreshing || isGenerating ? 'not-allowed' : 'pointer',
+          opacity: isRefreshing || isGenerating ? 0.5 : 1
+        }}
+      >
+        <RefreshIcon />
+      </button>
 
       {/* Export icon button */}
       <button

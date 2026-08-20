@@ -134,10 +134,24 @@ function initPlugin(scope: Scope) {
   // Clean up old cache data from previous versions
   figma.clientStorage.deleteAsync('description-cache').catch(() => {})
 
-  on<LoadComponentsHandler>('LOAD_COMPONENTS', () => {
+  const loadComponents = () => {
     const components = getComponents(scope)
     emit<ComponentsLoadedHandler>('COMPONENTS_LOADED', components)
-  })
+  }
+
+  on<LoadComponentsHandler>('LOAD_COMPONENTS', loadComponents)
+
+  // Current-page mode follows the page the user is working on. All-pages mode
+  // intentionally stays document-wide and only refreshes on explicit request.
+  const handleCurrentPageChange = () => {
+    if (scope === 'current-page') {
+      loadComponents()
+    }
+  }
+
+  if (scope === 'current-page') {
+    figma.on('currentpagechange', handleCurrentPageChange)
+  }
 
   on<ApplyDescriptionHandler>('APPLY_DESCRIPTION', ({ id, description }) => {
     const node = figma.getNodeById(id)
@@ -197,6 +211,9 @@ function initPlugin(scope: Scope) {
   })
 
   on<ClosePluginHandler>('CLOSE_PLUGIN', () => {
+    if (scope === 'current-page') {
+      figma.off('currentpagechange', handleCurrentPageChange)
+    }
     figma.closePlugin()
   })
 }

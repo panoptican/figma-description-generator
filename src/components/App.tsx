@@ -55,6 +55,7 @@ export function App({ scope, currentPageName }: AppProps) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isExportOpen, setIsExportOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [isGeneratingAll, setIsGeneratingAll] = useState(false)
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: 0 })
   const [rowErrors, setRowErrors] = useState<Record<string, string | undefined>>({})
@@ -80,6 +81,9 @@ export function App({ scope, currentPageName }: AppProps) {
       'COMPONENTS_LOADED',
       (loadedComponents) => {
         setComponents(loadedComponents)
+        setSelectedRowId(null)
+        setRowErrors({})
+        setIsRefreshing(false)
         setIsLoading(false)
       }
     )
@@ -138,6 +142,17 @@ export function App({ scope, currentPageName }: AppProps) {
       unsubscribeImageExported()
     }
   }, [])
+
+  const handleRefreshComponents = useCallback(() => {
+    if (isRefreshing || isGeneratingAll) {
+      return
+    }
+
+    setIsRefreshing(true)
+    setSelectedRowId(null)
+    setRowErrors({})
+    emit<LoadComponentsHandler>('LOAD_COMPONENTS')
+  }, [isRefreshing, isGeneratingAll])
 
   // Filter components by search and variant toggle
   const filteredComponents = components.filter((component) => {
@@ -469,7 +484,10 @@ export function App({ scope, currentPageName }: AppProps) {
         onGenerateAllClick={handleGenerateAll}
         onCancelClick={handleCancelGenerateAll}
         onExportClick={() => setIsExportOpen(true)}
+        onRefreshClick={handleRefreshComponents}
+        refreshTitle={scope === 'current-page' ? 'Rescan current page' : 'Rescan all pages'}
         isGenerating={isGeneratingAll}
+        isRefreshing={isRefreshing}
         hasApiKey={!!settings.apiKey}
         progress={generateProgress}
         generateCount={generateCount}
