@@ -18,7 +18,7 @@ Rules:
 
 Output only the description text.`
 
-export const DEFAULT_ICON_PROMPT = `You are an icon naming assistant. Given an icon image and its current name, return a comma-separated list of 10-15 alternative names.
+export const DEFAULT_ICON_PROMPT = `You are an icon naming assistant. Given an icon image, its current name, and (when present) its parent component, return a comma-separated list of 10-15 alternative names.
 
 Analyze the icon visually—don't rely solely on the provided name, which may be inaccurate or overly specific. Think laterally: what concepts, actions, or contexts does this icon evoke? What might a designer search for when looking for this icon?
 
@@ -29,7 +29,8 @@ Include:
 
 Return ONLY the comma-separated list. Lowercase, single words preferred. No articles or prepositions.
 
-Icon name: {icon_name}`
+Icon name: {icon_name}
+Parent component: {parentName}`
 
 export const DEFAULT_VARIANT_PROMPT = `Write a brief description for a component variant.
 
@@ -71,15 +72,23 @@ export function buildPrompt(
 
   if (options?.isIcon) {
     const template = options.customIconPrompt || DEFAULT_ICON_PROMPT
-    return template.replace(/{icon_name}/g, componentName)
+    return addParentContext(
+      template
+        .replace(/{icon_name}/g, componentName)
+        .replace(/{parentName}/g, parentName || 'None'),
+      template,
+      parentName
+    )
   }
 
-  if (componentType === 'VARIANT' && parentName) {
+  if (componentType === 'VARIANT') {
     const template = customVariantPrompt || DEFAULT_VARIANT_PROMPT
-    return template
-      .replace(/{parentName}/g, parentName)
+    const prompt = template
+      .replace(/{parentName}/g, parentName || 'Unknown parent component')
       .replace(/{name}/g, componentName)
       .replace(/{properties}/g, propsString)
+
+    return addParentContext(prompt, template, parentName)
   }
 
   const template = customPrompt || DEFAULT_PROMPT
@@ -87,6 +96,14 @@ export function buildPrompt(
     .replace(/{name}/g, componentName)
     .replace(/{type}/g, componentType)
     .replace(/{properties}/g, propsString)
+}
+
+function addParentContext(prompt: string, template: string, parentName?: string): string {
+  if (!parentName || template.includes('{parentName}')) {
+    return prompt
+  }
+
+  return `${prompt}\n\nParent component: ${parentName}`
 }
 
 async function generateWithGemini(

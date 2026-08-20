@@ -61,6 +61,7 @@ As a designer auditing my component descriptions, I want to see many components 
 - [x] Expanded row shows type and properties as muted text (no badge)
 - [x] Expanded row has 2-line textarea
 - [x] Status text appears left of action buttons
+- [x] Collapsed rows distinguish component sets, standalone components, and variants; variants identify their parent
 - [x] Generate and Revert buttons right-aligned
 - [x] Clicking outside or pressing Escape collapses the row
 - [x] Only one row can be expanded at a time (optional - discuss)
@@ -81,6 +82,7 @@ As a designer auditing my component descriptions, I want to see many components 
 - Collapsed rows: 36px height, name on left, truncated description preview, chevron indicator
 - Empty rows: amber background `rgba(251, 191, 36, 0.08)`, darker on hover
 - Expanded rows: secondary background, name header, type/properties as muted text, 2-line textarea
+- Component-set rows are labeled as parents; variant rows are indented and labeled "Variant of {parentName}"
 - Escape key collapses expanded row via document keydown listener
 - Removed column headers (Layer Name, Description, Actions) - not needed with new design
 - Removed TYPE_COLORS badge in favor of text-based type display

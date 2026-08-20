@@ -323,7 +323,7 @@ export function SettingsModal({
         />
         <VerticalSpace space="small" />
         <Text>
-          <Muted>Variables: {'{icon_name}'} · Always includes component image</Muted>
+          <Muted>Variables: {'{icon_name}'}, {'{parentName}'} · Always includes component image</Muted>
         </Text>
 
         <VerticalSpace space="large" />

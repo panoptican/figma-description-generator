@@ -23,12 +23,6 @@ interface ComponentRowProps {
   onToggleIcon: (id: string) => void
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  COMPONENT: 'Component',
-  COMPONENT_SET: 'Component Set',
-  VARIANT: 'Variant'
-}
-
 function truncateDescription(text: string | undefined, maxLength: number = 60): string {
   if (!text) return ''
   if (text.length <= maxLength) return text
@@ -164,9 +158,13 @@ export function ComponentRow({
 
   // Build properties string for expanded view
   const propertiesStr = component.properties.length > 0 ? component.properties.join(', ') : ''
-  const typeAndProps = propertiesStr
-    ? `${TYPE_LABELS[component.type]} · ${propertiesStr}`
-    : TYPE_LABELS[component.type]
+  const relationshipLabel =
+    component.type === 'COMPONENT_SET'
+      ? 'Component set'
+      : component.type === 'VARIANT'
+        ? `Variant of ${component.parentName || 'component set'}`
+        : 'Component'
+  const typeAndProps = propertiesStr ? `${relationshipLabel} · ${propertiesStr}` : relationshipLabel
 
   // Collapsed state - single line
   if (!isExpanded) {
@@ -178,7 +176,7 @@ export function ComponentRow({
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
-          padding: '8px 16px',
+          padding: component.type === 'VARIANT' ? '8px 16px 8px 32px' : '8px 16px',
           height: '36px',
           boxSizing: 'border-box',
           borderBottom: '1px solid var(--figma-color-border)',
@@ -222,6 +220,27 @@ export function ComponentRow({
           title={component.name}
         >
           {component.name}
+        </span>
+
+        {/* Component hierarchy */}
+        <span
+          title={component.type === 'VARIANT' ? relationshipLabel : undefined}
+          style={{
+            maxWidth: '190px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            fontSize: '10px',
+            padding: '1px 5px',
+            borderRadius: '3px',
+            backgroundColor: component.type === 'VARIANT'
+              ? 'var(--figma-color-bg-secondary)'
+              : 'transparent',
+            color: 'var(--figma-color-text-tertiary)',
+            flexShrink: 0
+          }}
+        >
+          {relationshipLabel}
         </span>
 
         {/* Icon badge */}
@@ -277,7 +296,7 @@ export function ComponentRow({
     <div
       ref={rowRef}
       style={{
-        padding: '12px 16px',
+        padding: component.type === 'VARIANT' ? '12px 16px 12px 32px' : '12px 16px',
         borderBottom: '1px solid var(--figma-color-border)',
         backgroundColor: isSelected ? 'rgba(24, 160, 251, 0.1)' : 'var(--figma-color-bg-secondary)'
       }}

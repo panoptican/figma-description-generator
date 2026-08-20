@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildPrompt,
   CLAUDE_MODEL,
+  DEFAULT_ICON_PROMPT,
   DEFAULT_PROMPT,
   DEFAULT_VARIANT_PROMPT,
   generateDescription,
@@ -75,6 +76,58 @@ describe('buildPrompt', () => {
       expect(result).toContain('Component name: Button')
       expect(result).toContain('Type: COMPONENT')
       expect(result).not.toContain('Parent component:')
+    })
+
+    it('always includes the parent name when a custom variant prompt omits it', () => {
+      const result = buildPrompt(
+        'Property 1=Selected',
+        'VARIANT',
+        ['Property 1=Selected'],
+        'Mobile Tab Button',
+        undefined,
+        'Describe the selected state: {name}'
+      )
+
+      expect(result).toContain('Parent component: Mobile Tab Button')
+    })
+  })
+
+  describe('icon prompts', () => {
+    it('includes the parent component for an icon variant', () => {
+      const result = buildPrompt(
+        'Property 1=Selected',
+        'VARIANT',
+        ['Property 1=Selected'],
+        'Mobile Tab Button',
+        undefined,
+        undefined,
+        { isIcon: true }
+      )
+
+      expect(result).toContain('Icon name: Property 1=Selected')
+      expect(result).toContain('Parent component: Mobile Tab Button')
+      expect(result).not.toContain('{parentName}')
+    })
+
+    it('keeps parent context for a custom icon prompt that omits it', () => {
+      const result = buildPrompt(
+        'Selected',
+        'VARIANT',
+        [],
+        'Mobile Tab Button',
+        undefined,
+        undefined,
+        { isIcon: true, customIconPrompt: 'Name this icon: {icon_name}' }
+      )
+
+      expect(result).toBe('Name this icon: Selected\n\nParent component: Mobile Tab Button')
+    })
+
+    it('marks standalone icons as having no parent component', () => {
+      const result = buildPrompt('Arrow', 'COMPONENT', [], undefined, undefined, undefined, { isIcon: true })
+
+      expect(result).toContain('Parent component: None')
+      expect(DEFAULT_ICON_PROMPT).toContain('{parentName}')
     })
   })
 
