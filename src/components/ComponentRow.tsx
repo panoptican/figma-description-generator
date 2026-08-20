@@ -3,10 +3,12 @@ import { h } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 
 import { ComponentData } from '../types'
+import { getDescriptionStatus } from '../utils/descriptionStatus'
 
 interface ComponentRowProps {
   component: ComponentData
   onGenerate: (component: ComponentData) => Promise<string>
+  onGenerated: (id: string) => void
   onConfirm: (id: string, description: string) => void
   onReject: (id: string) => void
   onRevert: (id: string) => void
@@ -21,6 +23,7 @@ interface ComponentRowProps {
   onToggleExpand: (id: string) => void
   isIcon: boolean
   onToggleIcon: (id: string) => void
+  wasGeneratedThisSession: boolean
 }
 
 function truncateDescription(text: string | undefined, maxLength: number = 60): string {
@@ -45,7 +48,9 @@ export function ComponentRow({
   isExpanded,
   onToggleExpand,
   isIcon,
-  onToggleIcon
+  onToggleIcon,
+  onGenerated,
+  wasGeneratedThisSession
 }: ComponentRowProps) {
   const [description, setDescription] = useState(component.currentDescription)
   const [loading, setLoading] = useState(false)
@@ -106,18 +111,34 @@ export function ComponentRow({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isExpanded, component.id, onToggleExpand])
 
-  const hasDescription = !!component.currentDescription
-  const isEmpty = !hasDescription
+  const descriptionStatus = getDescriptionStatus(component.currentDescription, wasGeneratedThisSession)
+  const isEmpty = descriptionStatus === 'missing'
+  const statusColor = descriptionStatus === 'generated'
+    ? '#f59e0b'
+    : descriptionStatus === 'existing'
+      ? '#22c55e'
+      : 'transparent'
   const collapsedBackgroundColor = isSelected
     ? 'rgba(24, 160, 251, 0.12)'
-    : isEmpty
+    : descriptionStatus === 'generated'
       ? 'rgba(245, 158, 11, 0.08)'
-      : 'transparent'
+      : descriptionStatus === 'existing'
+        ? 'rgba(34, 197, 94, 0.06)'
+        : 'transparent'
   const collapsedHoverBackgroundColor = isSelected
     ? 'rgba(24, 160, 251, 0.18)'
-    : isEmpty
+    : descriptionStatus === 'generated'
       ? 'rgba(245, 158, 11, 0.14)'
-      : 'var(--figma-color-bg-hover)'
+      : descriptionStatus === 'existing'
+        ? 'rgba(34, 197, 94, 0.1)'
+        : 'var(--figma-color-bg-hover)'
+  const expandedBackgroundColor = isSelected
+    ? 'rgba(24, 160, 251, 0.1)'
+    : descriptionStatus === 'generated'
+      ? 'rgba(245, 158, 11, 0.08)'
+      : descriptionStatus === 'existing'
+        ? 'rgba(34, 197, 94, 0.06)'
+        : 'var(--figma-color-bg-secondary)'
   const sourceLabel = isIcon ? 'Icon prompt' : component.type === 'VARIANT' ? 'Variant prompt' : 'Default prompt'
   const statusLabel =
     error || externalError
@@ -128,9 +149,11 @@ export function ComponentRow({
           ? 'Saving...'
           : isDirty
             ? 'Unsaved changes'
-            : isEmpty
-              ? 'Missing description'
-              : 'Ready'
+            : descriptionStatus === 'generated'
+              ? 'Generated this session'
+              : isEmpty
+                ? 'Missing description'
+                : 'Ready'
 
   async function handleGenerate() {
     setLoading(true)
@@ -138,6 +161,7 @@ export function ComponentRow({
     try {
       const newDescription = await onGenerate(component)
       setDescription(newDescription)
+      onGenerated(component.id)
       onConfirm(component.id, newDescription)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate')
@@ -192,13 +216,13 @@ export function ComponentRow({
         }}
       >
         {/* Status dot */}
-        {isEmpty && (
+        {!isEmpty && (
           <span
             style={{
               width: '6px',
               height: '6px',
               borderRadius: '50%',
-              backgroundColor: '#f59e0b',
+              backgroundColor: statusColor,
               flexShrink: 0
             }}
           />
@@ -298,7 +322,7 @@ export function ComponentRow({
       style={{
         padding: component.type === 'VARIANT' ? '12px 16px 12px 32px' : '12px 16px',
         borderBottom: '1px solid var(--figma-color-border)',
-        backgroundColor: isSelected ? 'rgba(24, 160, 251, 0.1)' : 'var(--figma-color-bg-secondary)'
+        backgroundColor: expandedBackgroundColor
       }}
     >
       {/* Header row - name and collapse indicator */}

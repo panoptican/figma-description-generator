@@ -8,6 +8,7 @@ import { ComponentRow } from './ComponentRow'
 interface ComponentListProps {
   components: ComponentData[]
   onGenerate: (component: ComponentData) => Promise<string>
+  onGenerated: (id: string) => void
   onConfirm: (id: string, description: string) => void
   onReject: (id: string) => void
   onRevert: (id: string) => void
@@ -20,11 +21,13 @@ interface ComponentListProps {
   onSelect: (id: string) => void
   iconOverrides: Record<string, boolean>
   onToggleIcon: (id: string) => void
+  generatedThisSession: Set<string>
 }
 
 export function ComponentList({
   components,
   onGenerate,
+  onGenerated,
   onConfirm,
   onReject,
   onRevert,
@@ -36,7 +39,8 @@ export function ComponentList({
   rowErrors,
   onSelect,
   iconOverrides,
-  onToggleIcon
+  onToggleIcon,
+  generatedThisSession
 }: ComponentListProps) {
   const [collapsedPages, setCollapsedPages] = useState<Set<string>>(new Set())
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
@@ -199,6 +203,7 @@ export function ComponentList({
                   key={component.id}
                   component={component}
                   onGenerate={onGenerate}
+                  onGenerated={onGenerated}
                   onConfirm={onConfirm}
                   onReject={onReject}
                   onRevert={onRevert}
@@ -213,6 +218,7 @@ export function ComponentList({
                   onToggleExpand={handleToggleExpand}
                   isIcon={iconOverrides[component.id] ?? component.isIcon ?? false}
                   onToggleIcon={onToggleIcon}
+                  wasGeneratedThisSession={generatedThisSession.has(component.id)}
                 />
               ))}
           </div>

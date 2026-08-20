@@ -57,6 +57,7 @@ export function App({ scope, currentPageName }: AppProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isGeneratingAll, setIsGeneratingAll] = useState(false)
+  const [generatedThisSession, setGeneratedThisSession] = useState<Set<string>>(new Set())
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: 0 })
   const [rowErrors, setRowErrors] = useState<Record<string, string | undefined>>({})
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
@@ -153,6 +154,30 @@ export function App({ scope, currentPageName }: AppProps) {
     setRowErrors({})
     emit<LoadComponentsHandler>('LOAD_COMPONENTS')
   }, [isRefreshing, isGeneratingAll])
+
+  const markGeneratedThisSession = useCallback((id: string) => {
+    setGeneratedThisSession((previous) => {
+      if (previous.has(id)) {
+        return previous
+      }
+
+      const next = new Set(previous)
+      next.add(id)
+      return next
+    })
+  }, [])
+
+  const clearGeneratedThisSession = useCallback((id: string) => {
+    setGeneratedThisSession((previous) => {
+      if (!previous.has(id)) {
+        return previous
+      }
+
+      const next = new Set(previous)
+      next.delete(id)
+      return next
+    })
+  }, [])
 
   // Filter components by search and variant toggle
   const filteredComponents = components.filter((component) => {
@@ -292,12 +317,13 @@ export function App({ scope, currentPageName }: AppProps) {
           : c
       )
     )
+    clearGeneratedThisSession(id)
     setRowErrors((prev) => ({ ...prev, [id]: undefined }))
     emit<ApplyDescriptionHandler>('APPLY_DESCRIPTION', {
       id,
       description: target.previousDescription
     })
-  }, [components])
+  }, [components, clearGeneratedThisSession])
 
   const handleSaveSettings = useCallback((newSettings: Settings) => {
     // Preserve current iconOverrides in saved settings
@@ -349,6 +375,7 @@ export function App({ scope, currentPageName }: AppProps) {
 
         if (abortGenerateAllRef.current) return
 
+        markGeneratedThisSession(component.id)
         emit<ApplyDescriptionHandler>('APPLY_DESCRIPTION', {
           id: component.id,
           description
@@ -393,7 +420,7 @@ export function App({ scope, currentPageName }: AppProps) {
     setIsGeneratingAll(false)
     setGenerateProgress({ current: 0, total: 0 })
     abortGenerateAllRef.current = false
-  }, [filteredComponents, settings, handleGenerate])
+  }, [filteredComponents, settings, handleGenerate, markGeneratedThisSession])
 
   const handleCancelGenerateAll = useCallback(() => {
     abortGenerateAllRef.current = true
@@ -406,6 +433,7 @@ export function App({ scope, currentPageName }: AppProps) {
 
     try {
       const description = await handleGenerate(selectedComponent)
+      markGeneratedThisSession(selectedComponent.id)
       handleConfirm(selectedComponent.id, description)
     } catch (error) {
       console.error(`Failed to generate for ${selectedComponent.name}:`, error)
@@ -414,7 +442,7 @@ export function App({ scope, currentPageName }: AppProps) {
         [selectedComponent.id]: error instanceof Error ? error.message : 'Generation failed'
       }))
     }
-  }, [selectedComponent, settings.apiKey, isGeneratingAll, handleGenerate, handleConfirm])
+  }, [selectedComponent, settings.apiKey, isGeneratingAll, handleGenerate, markGeneratedThisSession, handleConfirm])
 
   const handleRevertSelected = useCallback(() => {
     if (!selectedComponent) {
@@ -498,6 +526,7 @@ export function App({ scope, currentPageName }: AppProps) {
       <ComponentList
         components={filteredComponents}
         onGenerate={handleGenerateForRow}
+        onGenerated={markGeneratedThisSession}
         onConfirm={handleConfirm}
         onReject={handleReject}
         onRevert={handleRevert}
@@ -513,6 +542,7 @@ export function App({ scope, currentPageName }: AppProps) {
         rowErrors={rowErrors}
         iconOverrides={iconOverrides}
         onToggleIcon={handleToggleIcon}
+        generatedThisSession={generatedThisSession}
       />
 
       <SettingsModal
