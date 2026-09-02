@@ -24,7 +24,9 @@ Design tools
 
 ## Support
 
-Add a public support URL or support email before submitting the listing. The repository URL can be used once the project repository is restored.
+https://github.com/panoptican/figma-description-generator/issues
+
+Repository: https://github.com/panoptican/figma-description-generator
 
 ## Submission notes
 
