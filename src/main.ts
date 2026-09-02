@@ -23,6 +23,7 @@ import {
   SettingsSavedHandler,
   VariantContext
 } from './types'
+import { isIconComponent } from './utils/icon'
 
 const DEFAULT_SETTINGS: Settings = {
   provider: 'chatgpt',
@@ -62,7 +63,7 @@ function getComponents(scope: Scope): ComponentData[] {
           currentDescription: node.description,
           pageName: page.name,
           variantContext,
-          isIcon: /^icon\b/i.test(node.name)
+          isIcon: isIconComponent(node.name, page.name)
         })
 
         for (const variant of variants) {
@@ -76,7 +77,7 @@ function getComponents(scope: Scope): ComponentData[] {
             parentName: node.name,
             parentId: node.id,
             variantContext,
-            isIcon: /^icon\b/i.test(node.name)
+            isIcon: isIconComponent(node.name, page.name)
           })
         }
       } else if (node.type === 'COMPONENT') {
@@ -92,7 +93,7 @@ function getComponents(scope: Scope): ComponentData[] {
           properties: [],
           currentDescription: node.description,
           pageName: page.name,
-          isIcon: /^icon\b/i.test(node.name)
+          isIcon: isIconComponent(node.name, page.name)
         })
       }
     }

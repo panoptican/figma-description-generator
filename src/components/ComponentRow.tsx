@@ -25,6 +25,8 @@ interface ComponentRowProps {
   isIcon: boolean
   onToggleIcon: (id: string) => void
   wasGeneratedThisSession: boolean
+  onOpenParent: (id: string) => void
+  onRowRef: (id: string, element: HTMLDivElement | null) => void
 }
 
 function truncateDescription(text: string | undefined, maxLength: number = 60): string {
@@ -52,7 +54,9 @@ export function ComponentRow({
   isIcon,
   onToggleIcon,
   onGenerated,
-  wasGeneratedThisSession
+  wasGeneratedThisSession,
+  onOpenParent,
+  onRowRef
 }: ComponentRowProps) {
   const [description, setDescription] = useState(component.currentDescription)
   const [loading, setLoading] = useState(false)
@@ -209,7 +213,10 @@ export function ComponentRow({
   if (!isExpanded) {
     return (
       <div
-        ref={rowRef}
+        ref={(element) => {
+          rowRef.current = element
+          onRowRef(component.id, element)
+        }}
         onClick={handleRowClick}
         style={{
           display: 'flex',
@@ -333,7 +340,10 @@ export function ComponentRow({
   // Expanded state - full details
   return (
     <div
-      ref={rowRef}
+      ref={(element) => {
+        rowRef.current = element
+        onRowRef(component.id, element)
+      }}
       style={{
         padding: component.type === 'VARIANT' ? '12px 16px 12px 32px' : '12px 16px',
         borderBottom: '1px solid var(--figma-color-border)',
@@ -494,15 +504,29 @@ export function ComponentRow({
           )}
 
           {component.type === 'VARIANT' && (
-            <span
-              style={{
-                color: 'var(--figma-color-text-tertiary)',
-                fontSize: '11px',
-                alignSelf: 'center'
+            <button
+              type="button"
+              onClick={(e: MouseEvent) => {
+                e.stopPropagation()
+                if (component.parentId) {
+                  onOpenParent(component.parentId)
+                }
               }}
+              style={{
+                color: 'var(--figma-color-text-brand)',
+                fontSize: '11px',
+                alignSelf: 'center',
+                padding: 0,
+                border: 'none',
+                backgroundColor: 'transparent',
+                cursor: component.parentId ? 'pointer' : 'default',
+                textDecoration: component.parentId ? 'underline' : 'none'
+              }}
+              disabled={!component.parentId}
+              title={component.parentId ? 'Open parent component' : undefined}
             >
               Generate from “{component.parentName || 'component set'}”
-            </span>
+            </button>
           )}
 
           {component.previousDescription && (

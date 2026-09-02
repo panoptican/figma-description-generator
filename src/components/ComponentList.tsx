@@ -1,6 +1,6 @@
 import { Muted, Text } from '@create-figma-plugin/ui'
 import { h } from 'preact'
-import { useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 
 import { ComponentData } from '../types'
 import { ComponentRow } from './ComponentRow'
@@ -46,6 +46,24 @@ export function ComponentList({
 }: ComponentListProps) {
   const [collapsedPages, setCollapsedPages] = useState<Set<string>>(new Set())
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const [pendingScrollId, setPendingScrollId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (pendingScrollId === null) {
+      return
+    }
+
+    const frame = requestAnimationFrame(() => {
+      rowRefs.current.get(pendingScrollId)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+      })
+      setPendingScrollId(null)
+    })
+
+    return () => cancelAnimationFrame(frame)
+  }, [pendingScrollId])
 
   if (components.length === 0) {
     return (
@@ -68,6 +86,42 @@ export function ComponentList({
       }
       return next
     })
+  }
+
+  function handleRowRef(id: string, element: HTMLDivElement | null) {
+    if (element) {
+      rowRefs.current.set(id, element)
+    } else {
+      rowRefs.current.delete(id)
+    }
+  }
+
+  function handleOpenParent(parentId: string) {
+    const parent = components.find((component) => component.id === parentId)
+    if (!parent) {
+      return
+    }
+
+    onRowSelect(parentId)
+    setCollapsedPages((prev) => {
+      if (!prev.has(parent.pageName)) {
+        return prev
+      }
+
+      const next = new Set(prev)
+      next.delete(parent.pageName)
+      return next
+    })
+    setExpandedRows((prev) => {
+      if (prev.has(parentId)) {
+        return prev
+      }
+
+      const next = new Set(prev)
+      next.add(parentId)
+      return next
+    })
+    setPendingScrollId(parentId)
   }
 
   function handleExpandAllInPage(pageComponents: ComponentData[]) {
@@ -219,6 +273,8 @@ export function ComponentList({
                   externalError={rowErrors[component.id]}
                   isExpanded={expandedRows.has(component.id)}
                   onToggleExpand={handleToggleExpand}
+                  onOpenParent={handleOpenParent}
+                  onRowRef={handleRowRef}
                   isIcon={iconOverrides[component.id] ?? component.isIcon ?? false}
                   onToggleIcon={onToggleIcon}
                   wasGeneratedThisSession={generatedThisSession.has(component.id)}
