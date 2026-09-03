@@ -1,3 +1,15 @@
 node_modules/
 build/
+coverage/
+*.tsbuildinfo
 .DS_Store
+npm-debug.log*
+product-description/
+.specify/
+.cursor/
+.vscode/
+.env
+.env.*
+!.env.example
+.claude
+logs/
