@@ -6,17 +6,17 @@ Description Generator
 
 ## Tagline
 
-Generate clear, useful descriptions for your Figma components with AI.
+Generate Figma component descriptions, then review before applying.
 
 ## Description
 
-Description Generator turns the structure of your Figma components into concise, documentation-ready descriptions. Choose ChatGPT, Claude, or Gemini, select the components to process, and review the result before applying it to your design system.
+Description Generator writes descriptions for Figma components and component sets. Choose ChatGPT, Claude, or Gemini, pick the components to run, and edit the result before it is applied.
 
-Generate descriptions for the current page or an entire file. The plugin understands component sets, variants, properties, and icon components, and can optionally include a component image for richer context. Use the built-in prompts or tailor the writing style to match your team's documentation voice.
+You can run the current page or the whole file. It reads component sets, variants, properties, and icon components, and can send a screenshot of the component with the prompt. Use the built-in prompts, or replace them with your own.
 
-Every description is editable before you apply it. Generate one component at a time or process a full page with bounded concurrency, then keep the results that are useful and revise the rest. Keyboard shortcuts make repeat documentation work fast.
+Generate one component, a set, or a page. You can still edit after they generate. Keyboard shortcuts cover the repeat work.
 
-Your API key is entered and stored in Figma for your account and requests go directly from the plugin to the AI provider you choose. There is no Description Generator server and no account to create. Review your provider's terms before sending component names, properties, or optional images to its API.
+Your API key is entered and stored in Figma for your account. Requests go from the plugin to the provider you choose. There is no Description Generator server and no account to create. Review your provider's terms before sending component names, properties, or optional images.
 
 ## Suggested category
 

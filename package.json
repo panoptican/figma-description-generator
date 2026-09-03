@@ -1,7 +1,7 @@
 {
   "name": "description-generator",
   "version": "1.0.0",
-  "description": "AI-powered description generator for Figma components",
+  "description": "Generate descriptions for Figma components and component sets.",
   "license": "MIT",
   "engines": {
     "node": ">=24.0.0 <26.0.0"
