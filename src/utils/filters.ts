@@ -1,4 +1,5 @@
 import { ComponentData } from '../types'
+import { isDescriptionEmpty } from './text'
 
 export interface FilterOptions {
   showVariants: boolean
@@ -40,7 +41,7 @@ export function filterComponents(
  * Counts components missing descriptions.
  */
 export function countMissingDescriptions(components: ComponentData[]): number {
-  return components.filter((c) => !c.currentDescription).length
+  return components.filter((c) => isDescriptionEmpty(c.currentDescription)).length
 }
 
 /**
@@ -50,7 +51,7 @@ export function countGeneratable(
   components: ComponentData[],
   overwriteExisting: boolean
 ): number {
-  return components.filter((c) => overwriteExisting || !c.currentDescription).length
+  return components.filter((c) => overwriteExisting || isDescriptionEmpty(c.currentDescription)).length
 }
 
 /**

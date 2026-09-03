@@ -1,4 +1,5 @@
 import { ComponentData } from '../types'
+import { isDescriptionEmpty } from './text'
 
 export type ExportFormat = 'csv' | 'json'
 
@@ -17,7 +18,7 @@ export interface ExportData {
  */
 export function prepareExportData(components: ComponentData[]): ExportData[] {
   return components
-    .filter((c) => c.currentDescription && c.currentDescription.trim().length > 0)
+    .filter((c) => !isDescriptionEmpty(c.currentDescription))
     .map((c) => ({
       componentId: c.id,
       componentName: c.name,

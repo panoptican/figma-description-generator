@@ -223,6 +223,10 @@ export function SettingsModal({
         <Checkbox value={overwriteExisting} onValueChange={setOverwriteExisting}>
           <Text>Overwrite existing descriptions when generating all</Text>
         </Checkbox>
+        <VerticalSpace space="extraSmall" />
+        <Text>
+          <Muted>Generate and Generate set on a row still replace the current description.</Muted>
+        </Text>
 
         <VerticalSpace space="extraLarge" />
 

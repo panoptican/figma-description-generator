@@ -148,6 +148,16 @@ describe('countMissingDescriptions', () => {
   it('handles empty array', () => {
     expect(countMissingDescriptions([])).toBe(0)
   })
+
+  it('treats whitespace-only descriptions as missing', () => {
+    const components = [
+      createComponent({ id: '1', currentDescription: '   ' }),
+      createComponent({ id: '2', currentDescription: '\n\t' }),
+      createComponent({ id: '3', currentDescription: 'Has description' })
+    ]
+
+    expect(countMissingDescriptions(components)).toBe(2)
+  })
 })
 
 describe('countGeneratable', () => {
@@ -169,6 +179,15 @@ describe('countGeneratable', () => {
     ]
 
     expect(countGeneratable(components, true)).toBe(3)
+  })
+
+  it('counts whitespace-only descriptions as generatable when overwrite is off', () => {
+    const components = [
+      createComponent({ id: '1', currentDescription: '   ' }),
+      createComponent({ id: '2', currentDescription: 'Has description' })
+    ]
+
+    expect(countGeneratable(components, false)).toBe(1)
   })
 })
 

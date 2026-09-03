@@ -129,7 +129,8 @@ function addVariantContext(prompt: string, variantContext?: VariantContext[]): s
 async function generateWithGemini(
   apiKey: string,
   prompt: string,
-  imageBase64?: string
+  imageBase64?: string,
+  abortSignal?: AbortSignal
 ): Promise<string> {
   const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = []
 
@@ -154,7 +155,8 @@ async function generateWithGemini(
         contents: [{
           parts
         }]
-      })
+      }),
+      signal: abortSignal
     }
   )
 
@@ -176,7 +178,8 @@ async function generateWithGemini(
 async function generateWithClaude(
   apiKey: string,
   prompt: string,
-  imageBase64?: string
+  imageBase64?: string,
+  abortSignal?: AbortSignal
 ): Promise<string> {
   type ContentBlock = { type: 'text'; text: string } | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
   const content: ContentBlock[] = []
@@ -208,7 +211,8 @@ async function generateWithClaude(
         role: 'user',
         content: imageBase64 ? content : prompt
       }]
-    })
+    }),
+    signal: abortSignal
   })
 
   if (!response.ok) {
@@ -229,7 +233,8 @@ async function generateWithClaude(
 async function generateWithChatGPT(
   apiKey: string,
   prompt: string,
-  imageBase64?: string
+  imageBase64?: string,
+  abortSignal?: AbortSignal
 ): Promise<string> {
   type ContentPart =
     | { type: 'input_text'; text: string }
@@ -257,7 +262,8 @@ async function generateWithChatGPT(
         role: 'user',
         content
       }]
-    })
+    }),
+    signal: abortSignal
   })
 
   if (!response.ok) {
@@ -288,7 +294,8 @@ export async function generateDescription(
   customVariantPrompt?: string,
   imageBase64?: string,
   iconOptions?: { isIcon?: boolean; customIconPrompt?: string },
-  variantContext?: VariantContext[]
+  variantContext?: VariantContext[],
+  abortSignal?: AbortSignal
 ): Promise<string> {
   const prompt = buildPrompt(
     componentName,
@@ -303,11 +310,11 @@ export async function generateDescription(
 
   switch (provider) {
     case 'gemini':
-      return generateWithGemini(apiKey, prompt, imageBase64)
+      return generateWithGemini(apiKey, prompt, imageBase64, abortSignal)
     case 'claude':
-      return generateWithClaude(apiKey, prompt, imageBase64)
+      return generateWithClaude(apiKey, prompt, imageBase64, abortSignal)
     case 'chatgpt':
-      return generateWithChatGPT(apiKey, prompt, imageBase64)
+      return generateWithChatGPT(apiKey, prompt, imageBase64, abortSignal)
     default:
       throw new Error(`Unknown provider: ${provider}`)
   }

@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import {
   normalizeDescription,
   isDescriptionEmpty,
-  validateDescription,
   formatProperties,
   parseVariantName
 } from './text'
@@ -52,30 +51,6 @@ describe('isDescriptionEmpty', () => {
 
   it('returns false for string with content and whitespace', () => {
     expect(isDescriptionEmpty('  Hello  ')).toBe(false)
-  })
-})
-
-describe('validateDescription', () => {
-  it('returns null for valid description', () => {
-    expect(validateDescription('A button component')).toBeNull()
-  })
-
-  it('returns error for empty string', () => {
-    expect(validateDescription('')).toBe('Description cannot be empty')
-  })
-
-  it('returns error for whitespace-only string', () => {
-    expect(validateDescription('   ')).toBe('Description cannot be empty')
-  })
-
-  it('returns error for description over 500 characters', () => {
-    const longDescription = 'a'.repeat(501)
-    expect(validateDescription(longDescription)).toBe('Description is too long (max 500 characters)')
-  })
-
-  it('accepts description exactly 500 characters', () => {
-    const maxDescription = 'a'.repeat(500)
-    expect(validateDescription(maxDescription)).toBeNull()
   })
 })
 

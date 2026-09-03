@@ -328,4 +328,31 @@ describe('generateDescription', () => {
     const claudeBody = JSON.parse(fetchMock.mock.calls[1][1].body as string)
     expect(claudeBody.model).toBe(CLAUDE_MODEL)
   })
+
+  it('forwards an abort signal to the provider request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ output_text: 'A description.' })
+    } as Response)
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const abortController = new AbortController()
+
+    await generateDescription(
+      'chatgpt',
+      'key',
+      'Button',
+      'COMPONENT',
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      abortController.signal
+    )
+
+    const [, request] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(request.signal).toBe(abortController.signal)
+  })
 })

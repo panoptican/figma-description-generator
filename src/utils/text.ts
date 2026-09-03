@@ -16,24 +16,6 @@ export function isDescriptionEmpty(description: string | undefined | null): bool
 }
 
 /**
- * Validates that a description meets basic quality criteria.
- * Returns an error message if invalid, or null if valid.
- */
-export function validateDescription(description: string): string | null {
-  const trimmed = description.trim()
-
-  if (trimmed.length === 0) {
-    return 'Description cannot be empty'
-  }
-
-  if (trimmed.length > 500) {
-    return 'Description is too long (max 500 characters)'
-  }
-
-  return null
-}
-
-/**
  * Formats component properties for display or prompt inclusion.
  */
 export function formatProperties(properties: string[]): string {

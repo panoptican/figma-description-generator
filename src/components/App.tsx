@@ -26,6 +26,8 @@ import {
   getProviderDisplayName
 } from '../services/ai'
 import { exportDescriptions, ExportFormat } from '../utils/export'
+import { getComponentSetMembers, getGenerationBatches } from '../utils/generationBatches'
+import { isDescriptionEmpty } from '../utils/text'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { Header } from './Header'
 import { SettingsModal } from './SettingsModal'
@@ -48,48 +50,8 @@ const DEFAULT_SETTINGS: Settings = {
   overwriteExisting: false
 }
 
-interface GenerationBatch {
-  members: ComponentData[]
-}
-
-function getComponentSetMembers(components: ComponentData[], componentSet: ComponentData): ComponentData[] {
-  return components.filter((component) => (
-    component.id === componentSet.id || component.parentId === componentSet.id
-  ))
-}
-
-function getGenerationBatches(
-  components: ComponentData[],
-  filteredComponents: ComponentData[],
-  overwriteExisting: boolean
-): GenerationBatch[] {
-  const filteredIds = new Set(filteredComponents.map((component) => component.id))
-  const targets = components.filter((component) => {
-    if (component.type === 'VARIANT') {
-      return false
-    }
-
-    if (filteredIds.has(component.id)) {
-      return true
-    }
-
-    return component.type === 'COMPONENT_SET' && components.some((member) => (
-      member.parentId === component.id && filteredIds.has(member.id)
-    ))
-  })
-
-  return targets
-    .map((target) => {
-      const members = target.type === 'COMPONENT_SET'
-        ? getComponentSetMembers(components, target)
-        : [target]
-      const pendingMembers = overwriteExisting
-        ? members
-        : members.filter((member) => !member.currentDescription)
-
-      return { members: pendingMembers }
-    })
-    .filter((batch) => batch.members.length > 0)
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
 }
 
 export function App({ scope, currentPageName }: AppProps) {
@@ -107,6 +69,7 @@ export function App({ scope, currentPageName }: AppProps) {
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
   const [iconOverrides, setIconOverrides] = useState<Record<string, boolean>>({})
   const abortGenerateAllRef = useRef(false)
+  const generateAllAbortControllerRef = useRef<AbortController | null>(null)
   // BUG-001 fix: Map of resolvers keyed by component ID instead of single ref
   const imageExportResolvers = useRef<Map<string, (value: string | null) => void>>(new Map())
   const searchInputRef = useRef<HTMLInputElement | null>(null)
@@ -238,12 +201,10 @@ export function App({ scope, currentPageName }: AppProps) {
     )
   })
 
-  const totalDisplayed = filteredComponents.length
-  const missingCount = filteredComponents.filter((c) => !c.currentDescription).length
   const generationBatches = getGenerationBatches(components, filteredComponents, settings.overwriteExisting)
   const generateCount = generationBatches.reduce((count, batch) => count + batch.members.length, 0)
   const exportCount = filteredComponents.filter(
-    (c) => c.currentDescription && c.currentDescription.trim().length > 0
+    (c) => !isDescriptionEmpty(c.currentDescription)
   ).length
   const selectedComponent = useMemo(
     () => filteredComponents.find((component) => component.id === selectedRowId) ?? null,
@@ -261,7 +222,7 @@ export function App({ scope, currentPageName }: AppProps) {
   }, [filteredComponents, selectedRowId])
 
   const handleGenerate = useCallback(
-    async (component: ComponentData): Promise<string> => {
+    async (component: ComponentData, abortSignal?: AbortSignal): Promise<string> => {
       const isIcon = iconOverrides[component.id] ?? component.isIcon ?? false
       let imageBase64: string | undefined
 
@@ -283,7 +244,8 @@ export function App({ scope, currentPageName }: AppProps) {
         settings.customVariantPrompt || undefined,
         imageBase64,
         { isIcon, customIconPrompt: settings.customIconPrompt || undefined },
-        component.variantContext
+        component.variantContext,
+        abortSignal
       )
 
       return description
@@ -417,6 +379,8 @@ export function App({ scope, currentPageName }: AppProps) {
 
     setIsGeneratingAll(true)
     abortGenerateAllRef.current = false
+    const abortController = new AbortController()
+    generateAllAbortControllerRef.current = abortController
 
     const batchesToGenerate = generationBatches
     const totalToGenerate = batchesToGenerate.reduce((count, batch) => count + batch.members.length, 0)
@@ -424,6 +388,7 @@ export function App({ scope, currentPageName }: AppProps) {
     if (totalToGenerate === 0) {
       setIsGeneratingAll(false)
       setGenerateProgress({ current: 0, total: 0 })
+      generateAllAbortControllerRef.current = null
       return
     }
 
@@ -435,13 +400,14 @@ export function App({ scope, currentPageName }: AppProps) {
     // remain atomic jobs while their members are generated sequentially.
     const queue = [...batchesToGenerate]
 
-    const processBatch = async (batch: GenerationBatch) => {
+    const processBatch = async (batch: typeof batchesToGenerate[number]) => {
       for (const component of batch.members) {
         if (abortGenerateAllRef.current) return
 
         try {
-          const description = await handleGenerate(component)
+          const description = await handleGenerate(component, abortController.signal)
 
+          // Cancel drops results even if the provider already returned.
           if (abortGenerateAllRef.current) return
 
           markGeneratedThisSession(component.id)
@@ -464,6 +430,9 @@ export function App({ scope, currentPageName }: AppProps) {
 
           setRowErrors((prev) => ({ ...prev, [component.id]: undefined }))
         } catch (error) {
+          if (abortGenerateAllRef.current || isAbortError(error)) {
+            return
+          }
           console.error(`Failed to generate for ${component.name}:`, error)
           setRowErrors((prev) => ({
             ...prev,
@@ -490,10 +459,12 @@ export function App({ scope, currentPageName }: AppProps) {
     setIsGeneratingAll(false)
     setGenerateProgress({ current: 0, total: 0 })
     abortGenerateAllRef.current = false
+    generateAllAbortControllerRef.current = null
   }, [generationBatches, settings, handleGenerate, markGeneratedThisSession])
 
   const handleCancelGenerateAll = useCallback(() => {
     abortGenerateAllRef.current = true
+    generateAllAbortControllerRef.current?.abort()
   }, [])
 
   const handleGenerateSelected = useCallback(async () => {

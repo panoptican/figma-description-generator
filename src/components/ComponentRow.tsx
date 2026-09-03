@@ -65,6 +65,17 @@ export function ComponentRow({
   const [isDirty, setIsDirty] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const rowRef = useRef<HTMLDivElement>(null)
+  const descriptionRef = useRef(description)
+  const isDirtyRef = useRef(isDirty)
+  const currentDescriptionRef = useRef(component.currentDescription)
+  const onConfirmRef = useRef(onConfirm)
+  const componentIdRef = useRef(component.id)
+
+  descriptionRef.current = description
+  isDirtyRef.current = isDirty
+  currentDescriptionRef.current = component.currentDescription
+  onConfirmRef.current = onConfirm
+  componentIdRef.current = component.id
 
   useEffect(() => {
     setDescription(component.currentDescription)
@@ -77,6 +88,13 @@ export function ComponentRow({
       return
     }
 
+    if (!isExpanded) {
+      onConfirm(component.id, description)
+      isDirtyRef.current = false
+      setIsDirty(false)
+      return
+    }
+
     const timeout = setTimeout(() => {
       setIsSaving(true)
       onConfirm(component.id, description)
@@ -84,7 +102,17 @@ export function ComponentRow({
     }, 800)
 
     return () => clearTimeout(timeout)
-  }, [description, isDirty, component.currentDescription, component.id, onConfirm])
+  }, [description, isDirty, isExpanded, component.currentDescription, component.id, onConfirm])
+
+  useEffect(() => {
+    return () => {
+      if (!isDirtyRef.current || descriptionRef.current === currentDescriptionRef.current) {
+        return
+      }
+
+      onConfirmRef.current(componentIdRef.current, descriptionRef.current)
+    }
+  }, [])
 
   // Handle Escape key to collapse
   useEffect(() => {
@@ -529,7 +557,7 @@ export function ComponentRow({
             </button>
           )}
 
-          {component.previousDescription && (
+          {component.previousDescription !== undefined && (
             <Button
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()

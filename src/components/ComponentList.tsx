@@ -3,6 +3,7 @@ import { h } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 
 import { ComponentData } from '../types'
+import { isDescriptionEmpty } from '../utils/text'
 import { ComponentRow } from './ComponentRow'
 
 interface ComponentListProps {
@@ -153,7 +154,7 @@ export function ComponentList({
     <div style={{ flex: 1, overflow: 'auto', position: 'relative', zIndex: 0 }}>
       {Object.entries(componentsByPage).map(([pageName, pageComponents]) => {
         const isCollapsed = collapsedPages.has(pageName)
-        const completedCount = pageComponents.filter(c => !!c.currentDescription).length
+        const completedCount = pageComponents.filter((c) => !isDescriptionEmpty(c.currentDescription)).length
         const totalCount = pageComponents.length
         const isComplete = completedCount === totalCount
 
