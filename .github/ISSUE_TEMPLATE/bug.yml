@@ -1,0 +1,99 @@
+name: Bug report
+description: Something in the plugin did not work as expected.
+title: '[Bug]: '
+labels: [bug]
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Please do not paste API keys or other secrets.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, and what did the plugin do instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: figma-client
+    attributes:
+      label: Figma
+      options:
+        - Desktop app
+        - Browser
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: menu
+    attributes:
+      label: Plugin menu
+      options:
+        - Current page
+        - All pages
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: AI provider
+      options:
+        - ChatGPT (OpenAI)
+        - Claude (Anthropic)
+        - Gemini (Google)
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: include-image
+    attributes:
+      label: Include component image
+      description: In plugin settings, was "include image" turned on?
+      options:
+        - Yes
+        - No
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Error text
+      description: Copy any error shown in the plugin. Leave blank if there was none.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Component type, screenshot, or other context. You can attach images here.
+    validations:
+      required: false
