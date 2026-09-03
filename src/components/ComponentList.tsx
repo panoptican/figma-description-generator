@@ -2,12 +2,14 @@ import { Muted, Text } from '@create-figma-plugin/ui'
 import { h } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 
-import { ComponentData } from '../types'
+import { ComponentData, Scope } from '../types'
 import { isDescriptionEmpty } from '../utils/text'
 import { ComponentRow } from './ComponentRow'
 
 interface ComponentListProps {
   components: ComponentData[]
+  searchValue: string
+  scope: Scope
   onGenerate: (component: ComponentData) => Promise<string>
   onGenerateComponentSet: (component: ComponentData) => Promise<void>
   onGenerated: (id: string) => void
@@ -28,6 +30,8 @@ interface ComponentListProps {
 
 export function ComponentList({
   components,
+  searchValue,
+  scope,
   onGenerate,
   onGenerateComponentSet,
   onGenerated,
@@ -67,10 +71,16 @@ export function ComponentList({
   }, [pendingScrollId])
 
   if (components.length === 0) {
+    const emptyMessage = searchValue
+      ? `No matches for “${searchValue}”.`
+      : scope === 'current-page'
+        ? 'No components on this page. Close and run Entire file to scan the whole file.'
+        : 'No components in this file.'
+
     return (
       <div style={{ padding: '40px', textAlign: 'center' }}>
         <Text>
-          <Muted>No components found in this document</Muted>
+          <Muted>{emptyMessage}</Muted>
         </Text>
       </div>
     )
@@ -219,7 +229,7 @@ export function ComponentList({
                           : 'var(--figma-color-text-secondary)'
                     }}
                   >
-                    ({completedCount}/{totalCount})
+                    {completedCount} of {totalCount} described
                   </span>
                 </Text>
               </div>

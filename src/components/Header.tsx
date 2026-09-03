@@ -12,6 +12,8 @@ interface HeaderProps {
   onExportClick: () => void
   onRefreshClick: () => void
   refreshTitle: string
+  scopeLabel: string
+  overwriteExisting: boolean
   isGenerating: boolean
   isRefreshing: boolean
   hasApiKey: boolean
@@ -30,6 +32,8 @@ export function Header({
   onExportClick,
   onRefreshClick,
   refreshTitle,
+  scopeLabel,
+  overwriteExisting,
   isGenerating,
   isRefreshing,
   hasApiKey,
@@ -38,6 +42,19 @@ export function Header({
   exportCount,
   searchInputRef
 }: HeaderProps) {
+  const canGenerateAll = hasApiKey && generateCount > 0
+  const generateLabel = overwriteExisting
+    ? `Replace ${generateCount}`
+    : `Fill ${generateCount}`
+  const generateTitle = !hasApiKey
+    ? 'Add an API key in Settings to start'
+    : generateCount === 0
+      ? overwriteExisting
+        ? 'Nothing to replace'
+        : 'Nothing to fill'
+      : overwriteExisting
+        ? `Overwrites Figma descriptions (${getShortcutLabel('G', true)})`
+        : `Writes onto Figma components. Skips existing. (${getShortcutLabel('G', true)})`
   const SparkleIcon = () => (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .963L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
@@ -85,16 +102,30 @@ export function Header({
   }
 
   return (
-    <div style={{
-      padding: '8px 12px',
-      borderBottom: '1px solid var(--figma-color-border)',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '8px',
-      height: '48px',
-      boxSizing: 'border-box'
-    }}>
-      {/* Search input - takes available space */}
+    <div>
+      <div style={{
+        padding: '8px 12px',
+        borderBottom: '1px solid var(--figma-color-border)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        height: '48px',
+        boxSizing: 'border-box'
+      }}>
+      <span
+        title={scopeLabel}
+        style={{
+          fontSize: '11px',
+          color: 'var(--figma-color-text-secondary)',
+          flexShrink: 0,
+          maxWidth: 160,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap'
+        }}
+      >
+        {scopeLabel}
+      </span>
       <div
         style={{
           flex: 1,
@@ -144,16 +175,20 @@ export function Header({
         </svg>
       </div>
 
-      {/* Generate All / Cancel button */}
       {isGenerating ? (
-        <Button onClick={onCancelClick} danger style={{ flexShrink: 0 }}>
-          Cancel ({progress.current}/{progress.total})
+        <Button
+          onClick={onCancelClick}
+          danger
+          title="Already-written descriptions stay."
+          style={{ flexShrink: 0 }}
+        >
+          Stop remaining ({progress.current}/{progress.total})
         </Button>
       ) : (
         <button
           onClick={onGenerateAllClick}
-          disabled={!hasApiKey}
-          title={hasApiKey ? `Generate descriptions for ${generateCount} components (${getShortcutLabel('G', true)})` : 'Add an API key in settings to start'}
+          disabled={!canGenerateAll}
+          title={generateTitle}
           style={{
             height: 32,
             padding: '0 12px',
@@ -163,8 +198,8 @@ export function Header({
             color: 'var(--figma-color-text-onbrand)',
             fontSize: '12px',
             fontWeight: 500,
-            cursor: hasApiKey ? 'pointer' : 'not-allowed',
-            opacity: hasApiKey ? 1 : 0.5,
+            cursor: canGenerateAll ? 'pointer' : 'not-allowed',
+            opacity: canGenerateAll ? 1 : 0.5,
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
@@ -172,7 +207,7 @@ export function Header({
             whiteSpace: 'nowrap'
           }}
         >
-          <SparkleIcon /> Generate All ({generateCount})
+          <SparkleIcon /> {generateLabel}
         </button>
       )}
 
@@ -210,14 +245,36 @@ export function Header({
         <ExportIcon />
       </button>
 
-      {/* Settings icon button */}
       <button
         onClick={onSettingsClick}
-        aria-label="Open settings"
+        aria-label="Settings"
+        title="Settings"
         style={iconButtonStyle}
       >
         <SettingsIcon />
       </button>
+    </div>
+    {!hasApiKey && (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          padding: '8px 12px',
+          borderBottom: '1px solid var(--figma-color-border)',
+          backgroundColor: 'var(--figma-color-bg-secondary)',
+          flexShrink: 0
+        }}
+      >
+        <span style={{ fontSize: '12px', color: 'var(--figma-color-text)' }}>
+          Add an API key in Settings before you can generate.
+        </span>
+        <Button onClick={onSettingsClick} secondary>
+          Open Settings
+        </Button>
+      </div>
+    )}
     </div>
   )
 }

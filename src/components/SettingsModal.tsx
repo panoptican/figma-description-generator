@@ -225,7 +225,7 @@ export function SettingsModal({
         </Checkbox>
         <VerticalSpace space="extraSmall" />
         <Text>
-          <Muted>Generate and Generate set on a row still replace the current description.</Muted>
+          <Muted>Generate on a row still replaces the current description.</Muted>
         </Text>
 
         <VerticalSpace space="extraLarge" />

@@ -188,7 +188,7 @@ export function ComponentRow({
               ? 'Generated this session'
               : isEmpty
                 ? 'Missing description'
-                : 'Ready'
+                : 'Has description'
 
   async function handleGenerate() {
     setLoading(true)
@@ -512,7 +512,7 @@ export function ComponentRow({
               disabled={loading || groupLoading || isGenerating || !hasApiKey}
               loading={loading}
             >
-              {component.type === 'COMPONENT_SET' ? 'Generate parent' : 'Generate'}
+              {component.type === 'COMPONENT_SET' ? 'Generate this set' : 'Generate'}
             </Button>
           )}
 
@@ -524,10 +524,10 @@ export function ComponentRow({
               }}
               disabled={groupLoading || loading || isGenerating || !hasApiKey}
               loading={groupLoading}
-              title="Generate descriptions for this parent and every variant"
+              title="Writes a description for this set and every variant"
               secondary
             >
-              Generate set
+              Generate set and variants
             </Button>
           )}
 
@@ -553,7 +553,7 @@ export function ComponentRow({
               disabled={!component.parentId}
               title={component.parentId ? 'Open parent component' : undefined}
             >
-              Generate from “{component.parentName || 'component set'}”
+              Open “{component.parentName || 'component set'}”
             </button>
           )}
 

@@ -10,7 +10,7 @@ Run the automated checks first:
 In Figma development mode:
 
 - Load the built plugin from `manifest.json`.
-- Exercise Current page and All pages.
+- Exercise This page and Entire file.
 - Generate a single component and a component set with variants.
 - Run Generate All with at least three components and confirm progress completes.
 - Enable image inclusion and verify image-aware generation for each provider.

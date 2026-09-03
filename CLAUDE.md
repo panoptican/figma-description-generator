@@ -35,12 +35,12 @@ build/               # Generated plugin bundle (git-ignored)
 
 - **Event-based communication:** Uses `emit`/`on` from create-figma-plugin for main↔UI messaging
 - **Settings persistence:** Uses Figma's `loadSettingsAsync`/`saveSettingsAsync` for API keys and preferences
-- **Scope modes:** "Current page" vs "All pages" - determined at plugin launch
+- **Scope modes:** "This page" vs "Entire file" - determined at plugin launch
 
 ## Plugin Menu
 
-- **Current page:** Process components on the active page only
-- **All pages:** Process all components across the document
+- **This page:** Process components on the active page only
+- **Entire file:** Process all components across the document
 
 ## Component Types Handled
 
@@ -73,7 +73,7 @@ npm run build
 Then validate by:
 1. Run `npm run watch`
 2. Load plugin in Figma development mode
-3. Test both "Current page" and "All pages" menu entries
+3. Test both "This page" and "Entire file" menu entries
 4. Verify description generation and application
 
 ## Code Style

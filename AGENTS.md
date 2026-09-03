@@ -39,7 +39,7 @@ Add specifications to `specs/` as markdown files. The agent picks the highest pr
 - Favor small, pure helpers over inline logic; reuse types from `src/types.ts` rather than duplicating shapes.
 
 ## Testing Guidelines
-- No automated tests present; validate changes by running `npm run watch`, reloading the plugin in Figma, and exercising both “Current page” and “All pages” menu entries.
+- No automated tests present; validate changes by running `npm run watch`, reloading the plugin in Figma, and exercising both “This page” and “Entire file” menu entries.
 - When adding logic, prefer extracting testable helpers; if you add tests, colocate under `src/**/__tests__` and align naming with the module under test.
 - Verify description application, variant parsing, and image export flows before shipping.
 

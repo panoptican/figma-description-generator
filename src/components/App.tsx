@@ -562,7 +562,9 @@ export function App({ scope, currentPageName }: AppProps) {
         onCancelClick={handleCancelGenerateAll}
         onExportClick={() => setIsExportOpen(true)}
         onRefreshClick={handleRefreshComponents}
-        refreshTitle={scope === 'current-page' ? 'Rescan current page' : 'Rescan all pages'}
+        refreshTitle={scope === 'current-page' ? 'Rescan this page' : 'Rescan entire file'}
+        scopeLabel={scope === 'current-page' ? `This page · ${currentPageName}` : 'Entire file'}
+        overwriteExisting={settings.overwriteExisting}
         isGenerating={isGeneratingAll}
         isRefreshing={isRefreshing}
         hasApiKey={!!settings.apiKey}
@@ -574,6 +576,8 @@ export function App({ scope, currentPageName }: AppProps) {
 
       <ComponentList
         components={filteredComponents}
+        searchValue={searchValue}
+        scope={scope}
         onGenerate={handleGenerateForRow}
         onGenerateComponentSet={handleGenerateComponentSet}
         onGenerated={markGeneratedThisSession}

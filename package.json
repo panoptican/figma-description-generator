@@ -39,7 +39,7 @@
     },
     "menu": [
       {
-        "name": "Current page",
+        "name": "This page",
         "main": {
           "src": "src/main.ts",
           "handler": "currentPage"
@@ -47,7 +47,7 @@
         "ui": "src/ui.tsx"
       },
       {
-        "name": "All pages",
+        "name": "Entire file",
         "main": {
           "src": "src/main.ts",
           "handler": "allPages"

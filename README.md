@@ -24,7 +24,7 @@ This README is for people who want to run the plugin locally, understand how the
 
 ## Key Features
 
-- **Two launch scopes.** `Current page` scans the active Figma page. `All pages` scans every page in the file. Scope is chosen from the menu and does not change mid-session.
+- **Two launch scopes.** `This page` scans the active Figma page. `Entire file` scans every page in the file. Scope is chosen from the menu and does not change mid-session.
 - **Component, set, and variant rows.** Standalone components, component sets, and each variant appear as list rows. Sets carry complete variant-set context into prompts.
 - **Three AI providers.** ChatGPT (OpenAI), Claude (Anthropic), and Gemini (Google). Users supply their own API key.
 - **Generate one, generate set, generate all.** Single-row generate, parent-plus-variants as an atomic set, or a document-wide run with up to three concurrent batches.
@@ -134,8 +134,8 @@ Expected:
   "main": "build/main.js",
   "ui": "build/ui.js",
   "menu": [
-    { "name": "Current page", "command": "src/main.ts--currentPage" },
-    { "name": "All pages", "command": "src/main.ts--allPages" }
+    { "name": "This page", "command": "src/main.ts--currentPage" },
+    { "name": "Entire file", "command": "src/main.ts--allPages" }
   ],
   "networkAccess": {
     "allowedDomains": [
@@ -165,9 +165,9 @@ You will not get a `localhost` URL. The UI only exists inside Figma.
 2. Open any design file that contains components.
 3. **Plugins → Development → Import plugin from manifest…**
 4. Select this repo’s `manifest.json` (the file at the project root, not a file inside `build/`).
-5. Run **Plugins → Development → Description Generator → Current page**.
+5. Run **Plugins → Development → Description Generator → This page**.
 
-The plugin window is **960×800**. The first paint is `Loading components…`. Then the header and page-grouped list appear.
+The plugin window is **960×800**. The first paint is `Loading components…`. Then the header and page-grouped list appear. With no API key, a banner says to add one in Settings.
 
 On later code changes:
 
@@ -182,7 +182,7 @@ On later code changes:
 4. Click **Validate** (optional; 5 second timeout). Save works even if you skip Validate.
 5. Click **Save**.
 
-Generate buttons stay disabled until a key is saved.
+Generate buttons stay disabled until a key is saved. A banner with **Open Settings** appears until then.
 
 ---
 
@@ -192,8 +192,8 @@ Generate buttons stay disabled until a key is saved.
 
 | Menu | What it scans | Page-change behavior |
 | --- | --- | --- |
-| **Current page** | `figma.currentPage` only | Changing the Figma page rescans automatically |
-| **All pages** | Every page under `figma.root.children` | Changing the Figma page does **not** rescan; use the refresh button |
+| **This page** | `figma.currentPage` only | Changing the Figma page rescans automatically |
+| **Entire file** | Every page under `figma.root.children` | Changing the Figma page does **not** rescan; use the refresh button |
 
 Closing the window ends the session. Choosing the other menu item later is a new launch, not a live scope switch.
 
@@ -201,25 +201,26 @@ Closing the window ends the session. Choosing the other menu item later is a new
 
 Left to right:
 
-1. **Search** — case-insensitive match on component name, page name, and properties. Shortcut: `⌘F` / `Ctrl+F`.
-2. **Generate All (N)** — `N` is the number of pending members in the current batch plan. Disabled without an API key. While running it becomes **Cancel (current/total)**.
-3. **Refresh** — explicit rescan. Tooltip is “Rescan current page” or “Rescan all pages”. Disabled while refreshing or while Generate All is running.
-4. **Export** — opens CSV/JSON export. Disabled when the filtered list has no non-empty descriptions.
-5. **Settings** — provider, key, prompts, toggles.
+1. **Scope** — `This page · {page name}` or `Entire file`, matching the menu entry used to launch.
+2. **Search** — case-insensitive match on component name, page name, and properties. Shortcut: `⌘F` / `Ctrl+F`.
+3. **Fill N** / **Replace N** — `N` is the number of pending members in the current batch plan. **Fill** skips components that already have text; **Replace** overwrites them. Disabled without an API key or when `N` is 0. While running it becomes **Stop remaining (current/total)**.
+4. **Refresh** — explicit rescan. Tooltip is “Rescan this page” or “Rescan entire file”. Disabled while refreshing or while a batch is running.
+5. **Export** — opens CSV/JSON export. Disabled when the filtered list has no non-empty descriptions.
+6. **Settings** — provider, key, prompts, toggles.
 
 ### Component list
 
-Rows are grouped by `pageName`. Each page header is sticky and shows `(completed/total)` descriptions. Click the header to collapse the page. **Expand All** / **Collapse All** toggles row expansion on that page. A checkmark replaces those buttons when every row on the page has a description.
+Rows are grouped by `pageName`. Each page header is sticky and shows `N of M described`. Click the header to collapse the page. **Expand All** / **Collapse All** toggles row expansion on that page. A checkmark replaces those buttons when every row on the page has a description.
 
-Empty document copy: `No components found in this document`.
+Empty copy: `No matches for “{search}”.` when search has no hits; `No components on this page. Close and run Entire file to scan the whole file.` for This page with an empty inventory; `No components in this file.` for Entire file with none.
 
 ### Row types
 
 | Type | How it appears | Generate actions |
 | --- | --- | --- |
 | `COMPONENT` | Standalone component (not a child of a set) | **Generate** |
-| `COMPONENT_SET` | Parent of variants | **Generate parent** (the set only) and **Generate set** (parent + every variant, sequential) |
-| `VARIANT` | Child of a set; indented | No isolated Generate. Link: **Generate from “{parent}”** opens the parent. `⌘G` / `Ctrl+G` on a selected variant runs Generate set on the parent. |
+| `COMPONENT_SET` | Parent of variants | **Generate this set** (the set only) and **Generate set and variants** (sequential) |
+| `VARIANT` | Child of a set; indented | No isolated Generate. Link: **Open “{parent}”** opens the parent. `⌘G` / `Ctrl+G` on a selected variant runs Generate set and variants on the parent. |
 
 Click the **name** to select the node on the canvas, switch to its page if needed, and zoom the viewport to it. Click the rest of the collapsed row to expand it.
 
@@ -242,7 +243,7 @@ There is no Save button.
 - Successful generate applies immediately and stores the prior text as `previousDescription`.
 - **Revert** (or `⌘Z` / `Ctrl+Z` when focus is not in a text field) swaps current and previous on both the list and the canvas. A second Revert toggles back.
 
-`overwriteExisting` does **not** protect single-row Generate or Generate set. Those always replace the current description. The toggle only filters Generate All.
+`overwriteExisting` does **not** protect single-row Generate, Generate this set, or Generate set and variants. Those always replace the current description. The toggle only filters Fill / Replace.
 
 ### Generate All
 
@@ -250,7 +251,7 @@ There is no Save button.
 2. Variant rows are never top-level targets. If search or “show variants” leaves only a variant visible, the parent set is still targeted so the set stays atomic.
 3. With **Overwrite existing descriptions when generating all** off, members that already have a real description are dropped from the batch. Whitespace-only counts as missing.
 4. Up to **3** workers pull batches from a shared queue. Inside a set batch, members run **one after another**.
-5. **Cancel** sets an abort flag and aborts the in-flight `fetch`. Members already applied stay applied. A provider response that arrives after cancel is **not** written to the canvas.
+5. **Stop remaining** sets an abort flag and aborts the in-flight `fetch`. Members already applied stay applied. A provider response that arrives after stop is **not** written to the canvas.
 6. There is no batch-level undo. Use per-row Revert.
 
 ### Icon mode
@@ -278,11 +279,11 @@ Shortcuts are registered after the list loads. `Mod` is `⌘` on Mac and `Ctrl` 
 
 | Shortcut | Action | Notes |
 | --- | --- | --- |
-| `Mod+G` | Generate the selected row | On a variant, runs Generate set on the parent. Ignored while typing in an input or textarea. |
+| `Mod+G` | Generate the selected row | On a variant, runs Generate set and variants on the parent. Ignored while typing in an input or textarea. |
 | `Mod+Shift+G` | Generate All | No-op without a key or while Generate All is already running. |
 | `Mod+F` | Focus and select the search field | Works even when focus is already in a text field. |
 | `Mod+Z` | Revert the selected row | Ignored while typing in a text field. |
-| `Escape` | Close Settings if open, else close Export | Does **not** cancel Generate All. An expanded row has its own Escape listener that collapses the row. |
+| `Escape` | Close Settings if open, else close Export | Does **not** stop Generate All. An expanded row has its own Escape listener that collapses the row. |
 
 ### Export
 
@@ -380,7 +381,7 @@ Local-only (gitignored) directories you may also see: `node_modules/`, `build/`,
 
 **Launch**
 
-1. User chooses **Current page** or **All pages**.
+1. User chooses **This page** or **Entire file**.
 2. Figma calls `currentPage()` or `allPages()` in `src/main.ts`.
 3. `initPlugin(scope)` calls `showUI({ width: 960, height: 800 }, { scope, currentPageName })`.
 4. Main thread deletes legacy `description-cache` from `clientStorage`.
@@ -424,7 +425,7 @@ ComponentData[]  ──COMPONENTS_LOADED──►  App state
                                               ▼
                                        filtered list
                                               │
-                    Generate / Generate set / Generate All
+                    Generate / Generate set and variants / Fill N
                                               │
                          optional EXPORT_IMAGE
                                               ▼
@@ -756,8 +757,8 @@ describe('generateDescription', () => {
 After `npm run watch`:
 
 1. Import / reload the development plugin from `manifest.json`.
-2. Exercise **Current page** and **All pages**.
-3. Generate a standalone component, a set (parent + Generate set), and an icon-mode row.
+2. Exercise **This page** and **Entire file**.
+3. Generate a standalone component, a set (Generate this set + Generate set and variants), and an icon-mode row.
 4. Run Generate All on at least three pending members; confirm progress and Cancel.
 5. Turn on include-image and confirm a PNG goes out (provider still returns text).
 6. Toggle Icon, quit the plugin, reopen, confirm the override stuck.
@@ -908,17 +909,17 @@ Claude requires `anthropic-dangerous-direct-browser-access: true` because the ca
 
 **Solution:** Expand the row and check `Source: Icon prompt` vs `Default prompt`. Toggle Icon if you expected an image. Watch the Figma console for `Failed to export image:`.
 
-### Current page list does not follow the canvas
+### This page list does not follow the canvas
 
-You launched **All pages**. That scope is document-wide and only refreshes on the header refresh button (or relaunch). Use **Current page** for automatic `currentpagechange` rescans.
+You launched **Entire file**. That scope is document-wide and only refreshes on the header refresh button (or relaunch). Use **This page** for automatic `currentpagechange` rescans.
 
 ### Generate All skipped rows I can see
 
 With overwrite off, members that already have a description are not pending. Search can hide a parent while still targeting its set if a matching variant is visible — or the opposite, drop a standalone component that does not match. Check the **Generate All (N)** count after clearing search.
 
-### Generate All cancelled but some descriptions changed
+### Generate All stopped but some descriptions changed
 
-Cancel is not transactional. Already-applied members keep the new text. Late provider responses after abort are dropped. Revert row-by-row, or use Figma undo on the canvas.
+Stop remaining is not transactional. Already-applied members keep the new text. Late provider responses after abort are dropped. Revert row-by-row, or use Figma undo on the canvas.
 
 ### Export downloads an empty-feeling file
 
