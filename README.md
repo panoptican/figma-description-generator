@@ -176,13 +176,13 @@ On later code changes:
 
 ### 7. First-Run Settings
 
-1. Click the gear icon.
+1. Click the gear icon or **Open Settings** on the no-key banner. The modal always opens on the **Setup** tab.
 2. Choose a provider.
 3. Paste an API key (the field is a password input).
 4. Click **Validate** (optional; 5 second timeout). Save works even if you skip Validate.
 5. Click **Save**.
 
-Generate buttons stay disabled until a key is saved. A banner with **Open Settings** appears until then.
+Prompt templates live on the **Prompts** tab if you want to customize them later. Generate buttons stay disabled until a key is saved. A banner with **Open Settings** appears until then.
 
 ---
 
@@ -206,7 +206,7 @@ Left to right:
 3. **Fill N** / **Replace N** — `N` is the number of pending members in the current batch plan. **Fill** skips components that already have text; **Replace** overwrites them. Disabled without an API key or when `N` is 0. While running it becomes **Stop remaining (current/total)**.
 4. **Refresh** — explicit rescan. Tooltip is “Rescan this page” or “Rescan entire file”. Disabled while refreshing or while a batch is running.
 5. **Export** — opens CSV/JSON export. Disabled when the filtered list has no non-empty descriptions.
-6. **Settings** — provider, key, prompts, toggles.
+6. **Settings** — one modal with **Setup** (provider, key, toggles) and **Prompts** (component, variant, and icon templates). Always opens on Setup.
 
 ### Component list
 
@@ -338,7 +338,7 @@ description-generator/
 │   │   ├── Header.tsx               # Search, Generate All, refresh, export, settings
 │   │   ├── ComponentList.tsx        # Page groups, expand/collapse, scroll-to-parent
 │   │   ├── ComponentRow.tsx         # Collapsed/expanded row, dirty autosave
-│   │   ├── SettingsModal.tsx        # Provider, key, prompts, validate
+│   │   ├── SettingsModal.tsx        # Settings tabs: Setup (provider, key, toggles) and Prompts
 │   │   └── ExportModal.tsx          # CSV vs JSON
 │   ├── services/
 │   │   ├── ai.ts                    # Prompts, models, provider fetch
@@ -543,7 +543,7 @@ overwriteExisting     boolean                           default: false
 iconOverrides         Record<nodeId, boolean>           optional
 ```
 
-Empty custom prompt fields in the modal **display** the default template. Saving an untouched default does not persist it as a custom prompt (`customPrompt || defaultPrompt` in the textarea; Save writes the state value, which stays `''` until the user edits).
+Empty custom prompt fields on the **Prompts** tab **display** the default template. Saving an untouched default does not persist it as a custom prompt (`customPrompt || defaultPrompt` in the textarea; Save writes the state value, which stays `''` until the user edits). Switching tabs keeps unsaved edits in memory until Save or Cancel.
 
 There is no SQL schema, migration, or seed file.
 
@@ -581,6 +581,8 @@ Developer machine setup is Node 24 + npm + Figma Desktop. All runtime configurat
 ## Configuration and Settings
 
 Configuration is the Settings modal plus the `figma-plugin` block in `package.json`.
+
+The Settings modal has two tabs. **Setup** is provider, API key (with Validate), include-image, show-variants, and overwrite-existing. **Prompts** is the component, variant, and icon textareas, each with Reset to default and the variable helper. Save and Cancel sit under the tabs on every view and write or discard both tabs in one action. The modal always opens on Setup (header gear and the no-key **Open Settings** banner); the last tab is not remembered.
 
 ### Required to generate
 
@@ -765,6 +767,7 @@ After `npm run watch`:
 7. Edit a textarea, wait for autosave, Revert, try `Mod+G` / `Mod+Shift+G` / `Mod+F`.
 8. Paste a bad key and confirm a readable validation or row error.
 9. Confirm `manifest.json` still lists all three provider domains.
+10. Open Settings from the gear and from the no-key banner; both land on **Setup**. Edit a prompt, switch to Setup, Save, reopen (prompt stuck). Edit a prompt, Cancel, reopen (reverted). Validate still works. Generate still uses the saved prompts.
 
 A longer checklist lives in [`release/qa-checklist.md`](release/qa-checklist.md).
 
