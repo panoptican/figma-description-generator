@@ -25,13 +25,10 @@ import {
   DEFAULT_ICON_PROMPT,
   getProviderDisplayName
 } from '../services/ai'
-import { exportDescriptions, ExportFormat } from '../utils/export'
 import { getComponentSetMembers, getGenerationBatches } from '../utils/generationBatches'
-import { isDescriptionEmpty } from '../utils/text'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { Header } from './Header'
 import { SettingsModal } from './SettingsModal'
-import { ExportModal } from './ExportModal'
 import { ComponentList } from './ComponentList'
 
 interface AppProps {
@@ -59,7 +56,6 @@ export function App({ scope, currentPageName }: AppProps) {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [searchValue, setSearchValue] = useState('')
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [isExportOpen, setIsExportOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isGeneratingAll, setIsGeneratingAll] = useState(false)
@@ -203,9 +199,6 @@ export function App({ scope, currentPageName }: AppProps) {
 
   const generationBatches = getGenerationBatches(components, filteredComponents, settings.overwriteExisting)
   const generateCount = generationBatches.reduce((count, batch) => count + batch.members.length, 0)
-  const exportCount = filteredComponents.filter(
-    (c) => !isDescriptionEmpty(c.currentDescription)
-  ).length
   const selectedComponent = useMemo(
     () => filteredComponents.find((component) => component.id === selectedRowId) ?? null,
     [filteredComponents, selectedRowId]
@@ -362,18 +355,6 @@ export function App({ scope, currentPageName }: AppProps) {
     emit<SaveSettingsHandler>('SAVE_SETTINGS', toSave)
   }, [iconOverrides])
 
-  const handleExport = useCallback((format: ExportFormat) => {
-    const { dataURL, filename } = exportDescriptions(filteredComponents, format)
-
-    // Create a temporary link element to trigger download
-    const link = document.createElement('a')
-    link.href = dataURL
-    link.download = filename
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }, [filteredComponents])
-
   const handleGenerateAll = useCallback(async () => {
     if (!settings.apiKey) return
 
@@ -500,14 +481,12 @@ export function App({ scope, currentPageName }: AppProps) {
     handleRevert(selectedComponent.id)
   }, [selectedComponent, handleRevert])
 
-  // Close any open modal
+  // Close Settings with Escape
   const handleCloseModal = useCallback(() => {
     if (isSettingsOpen) {
       setIsSettingsOpen(false)
-    } else if (isExportOpen) {
-      setIsExportOpen(false)
     }
-  }, [isSettingsOpen, isExportOpen])
+  }, [isSettingsOpen])
 
   // Keyboard shortcuts
   useKeyboardShortcuts(
@@ -560,7 +539,6 @@ export function App({ scope, currentPageName }: AppProps) {
         onSettingsClick={() => setIsSettingsOpen(true)}
         onGenerateAllClick={handleGenerateAll}
         onCancelClick={handleCancelGenerateAll}
-        onExportClick={() => setIsExportOpen(true)}
         onRefreshClick={handleRefreshComponents}
         refreshTitle={scope === 'current-page' ? 'Rescan this page' : 'Rescan entire file'}
         scopeLabel={scope === 'current-page' ? `This page · ${currentPageName}` : 'Entire file'}
@@ -570,7 +548,6 @@ export function App({ scope, currentPageName }: AppProps) {
         hasApiKey={!!settings.apiKey}
         progress={generateProgress}
         generateCount={generateCount}
-        exportCount={exportCount}
         searchInputRef={searchInputRef}
       />
 
@@ -607,13 +584,6 @@ export function App({ scope, currentPageName }: AppProps) {
         defaultPrompt={DEFAULT_PROMPT}
         defaultVariantPrompt={DEFAULT_VARIANT_PROMPT}
         defaultIconPrompt={DEFAULT_ICON_PROMPT}
-      />
-
-      <ExportModal
-        isOpen={isExportOpen}
-        exportCount={exportCount}
-        onClose={() => setIsExportOpen(false)}
-        onExport={handleExport}
       />
     </div>
   )

@@ -1,5 +1,9 @@
 # Batch Description Export
 
+## Retirement note — 2026-09-04
+
+Removed at the user's direction during Community release preparation. The one-way download of non-empty descriptions did not support the expected spreadsheet edit/import workflow. The completed specification below records the original implementation; it is not a request to restore export. Image export used for AI generation remains supported.
+
 ## Priority
 MEDIUM
 

@@ -9,7 +9,6 @@ interface HeaderProps {
   onSettingsClick: () => void
   onGenerateAllClick: () => void
   onCancelClick: () => void
-  onExportClick: () => void
   onRefreshClick: () => void
   refreshTitle: string
   scopeLabel: string
@@ -19,7 +18,6 @@ interface HeaderProps {
   hasApiKey: boolean
   progress: { current: number; total: number }
   generateCount: number
-  exportCount: number
   searchInputRef?: Ref<HTMLInputElement>
 }
 
@@ -29,7 +27,6 @@ export function Header({
   onSettingsClick,
   onGenerateAllClick,
   onCancelClick,
-  onExportClick,
   onRefreshClick,
   refreshTitle,
   scopeLabel,
@@ -39,7 +36,6 @@ export function Header({
   hasApiKey,
   progress,
   generateCount,
-  exportCount,
   searchInputRef
 }: HeaderProps) {
   const canGenerateAll = hasApiKey && generateCount > 0
@@ -67,14 +63,6 @@ export function Header({
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .69.4 1.3 1 1.58.19.09.4.14.61.14H21a2 2 0 0 1 0 4h-.09c-.21 0-.42.05-.61.14-.6.28-1 .89-1 1.58Z" />
-    </svg>
-  )
-
-  const ExportIcon = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <polyline points="7 10 12 15 17 10" />
-      <line x1="12" y1="15" x2="12" y2="3" />
     </svg>
   )
 
@@ -227,22 +215,6 @@ export function Header({
         }}
       >
         <RefreshIcon />
-      </button>
-
-      {/* Export icon button */}
-      <button
-        onClick={onExportClick}
-        disabled={exportCount === 0}
-        aria-label="Export descriptions"
-        title={exportCount > 0 ? `Export ${exportCount} descriptions` : 'No descriptions to export'}
-        style={{
-          ...iconButtonStyle,
-          color: exportCount > 0 ? 'var(--figma-color-text)' : 'var(--figma-color-text-disabled)',
-          cursor: exportCount > 0 ? 'pointer' : 'not-allowed',
-          opacity: exportCount > 0 ? 1 : 0.5
-        }}
-      >
-        <ExportIcon />
       </button>
 
       <button
