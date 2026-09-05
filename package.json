@@ -25,6 +25,7 @@
     "vitest": "^4.0.18"
   },
   "figma-plugin": {
+    "documentAccess": "dynamic-page",
     "editorType": [
       "figma"
     ],

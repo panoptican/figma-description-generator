@@ -38,11 +38,12 @@ const DEFAULT_SETTINGS: Settings = {
 
 type Scope = 'current-page' | 'all-pages'
 
-function getComponents(scope: Scope): ComponentData[] {
+async function getComponents(scope: Scope): Promise<ComponentData[]> {
   const components: ComponentData[] = []
   const pages = scope === 'current-page' ? [figma.currentPage] : figma.root.children
 
   for (const page of pages) {
+    await page.loadAsync()
     const nodes = page.findAllWithCriteria({
       types: ['COMPONENT', 'COMPONENT_SET']
     })
@@ -143,9 +144,21 @@ function initPlugin(scope: Scope) {
   // Clean up old cache data from previous versions
   figma.clientStorage.deleteAsync('description-cache').catch(() => {})
 
-  const loadComponents = () => {
-    const components = getComponents(scope)
-    emit<ComponentsLoadedHandler>('COMPONENTS_LOADED', components)
+  let scanVersion = 0
+  const loadComponents = async () => {
+    const version = ++scanVersion
+    try {
+      const components = await getComponents(scope)
+      // Page switches and rescans can overtake an earlier asynchronous scan.
+      if (version === scanVersion) {
+        emit<ComponentsLoadedHandler>('COMPONENTS_LOADED', components)
+      }
+    } catch (error) {
+      if (version !== scanVersion) return
+      console.error('Failed to load components:', error)
+      figma.notify('Could not load components. Please try Rescan.', { error: true })
+      emit<ComponentsLoadedHandler>('COMPONENTS_LOADED', [])
+    }
   }
 
   on<LoadComponentsHandler>('LOAD_COMPONENTS', loadComponents)
@@ -154,7 +167,7 @@ function initPlugin(scope: Scope) {
   // intentionally stays document-wide and only refreshes on explicit request.
   const handleCurrentPageChange = () => {
     if (scope === 'current-page') {
-      loadComponents()
+      return loadComponents()
     }
   }
 
@@ -162,15 +175,25 @@ function initPlugin(scope: Scope) {
     figma.on('currentpagechange', handleCurrentPageChange)
   }
 
-  on<ApplyDescriptionHandler>('APPLY_DESCRIPTION', ({ id, description }) => {
-    const node = figma.getNodeById(id)
-
-    if (node && (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET')) {
-      node.description = description
-      emit<DescriptionAppliedHandler>('DESCRIPTION_APPLIED', { id, success: true })
-    } else {
-      emit<DescriptionAppliedHandler>('DESCRIPTION_APPLIED', { id, success: false })
+  const pendingDescriptions = new Map<string, object>()
+  on<ApplyDescriptionHandler>('APPLY_DESCRIPTION', async ({ id, description }) => {
+    const request = {}
+    pendingDescriptions.set(id, request)
+    let success = false
+    try {
+      const node = await figma.getNodeByIdAsync(id)
+      // A newer edit or revert must win if node lookups finish out of order.
+      if (pendingDescriptions.get(id) !== request) return
+      if (node && (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET')) {
+        node.description = description
+        success = true
+      }
+    } catch (error) {
+      if (pendingDescriptions.get(id) !== request) return
+      console.error('Failed to apply description:', error)
     }
+    pendingDescriptions.delete(id)
+    emit<DescriptionAppliedHandler>('DESCRIPTION_APPLIED', { id, success })
   })
 
   on<LoadSettingsHandler>('LOAD_SETTINGS', async () => {
@@ -185,23 +208,28 @@ function initPlugin(scope: Scope) {
     emit<SettingsSavedHandler>('SETTINGS_SAVED')
   })
 
-  on<SelectComponentHandler>('SELECT_COMPONENT', ({ id }) => {
-    const node = figma.getNodeById(id)
-    if (node && 'type' in node) {
-      // Navigate to the page containing this node
+  on<SelectComponentHandler>('SELECT_COMPONENT', async ({ id }) => {
+    try {
+      const node = await figma.getNodeByIdAsync(id)
+      if (!node || (node.type !== 'COMPONENT' && node.type !== 'COMPONENT_SET')) {
+        figma.notify('This component is no longer available.', { error: true })
+        return
+      }
       const page = findPageForNode(node)
       if (page) {
-        figma.currentPage = page
+        await figma.setCurrentPageAsync(page)
+        page.selection = [node]
+        figma.viewport.scrollAndZoomIntoView([node])
       }
-      // Select and zoom to the node
-      figma.currentPage.selection = [node as SceneNode]
-      figma.viewport.scrollAndZoomIntoView([node as SceneNode])
+    } catch (error) {
+      console.error('Failed to select component:', error)
+      figma.notify('Could not select this component. Please try Rescan.', { error: true })
     }
   })
 
   on<ExportImageHandler>('EXPORT_IMAGE', async ({ id }) => {
     try {
-      const node = figma.getNodeById(id)
+      const node = await figma.getNodeByIdAsync(id)
       if (node && 'exportAsync' in node) {
         const bytes = await (node as SceneNode).exportAsync({
           format: 'PNG',
@@ -220,6 +248,8 @@ function initPlugin(scope: Scope) {
   })
 
   on<ClosePluginHandler>('CLOSE_PLUGIN', () => {
+    scanVersion++
+    pendingDescriptions.clear()
     if (scope === 'current-page') {
       figma.off('currentpagechange', handleCurrentPageChange)
     }
