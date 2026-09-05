@@ -100,9 +100,9 @@ describe('validateApiKey', () => {
       expect(result.valid).toBe(true)
       expect(result.error).toBeUndefined()
       expect(fetch).toHaveBeenCalledWith(
-        'https://api.anthropic.com/v1/messages',
+        'https://api.anthropic.com/v1/models?limit=1',
         expect.objectContaining({
-          method: 'POST',
+          method: 'GET',
           headers: expect.objectContaining({
             'x-api-key': 'sk-ant-test-key'
           })

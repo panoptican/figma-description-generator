@@ -1,3 +1,4 @@
+import { createDefaultSettings } from './settings'
 import {
   emit,
   loadSettingsAsync,
@@ -25,16 +26,7 @@ import {
 } from './types'
 import { isIconComponent } from './utils/icon'
 
-const DEFAULT_SETTINGS: Settings = {
-  provider: 'chatgpt',
-  apiKey: '',
-  customPrompt: '',
-  customVariantPrompt: '',
-  customIconPrompt: '',
-  includeImage: false,
-  showVariants: true,
-  overwriteExisting: false
-}
+const DEFAULT_SETTINGS = createDefaultSettings()
 
 type Scope = 'current-page' | 'all-pages'
 

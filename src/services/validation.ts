@@ -1,5 +1,4 @@
 import { AIProvider } from '../types'
-import { CLAUDE_MODEL } from './ai'
 
 export type ValidationStatus = 'idle' | 'validating' | 'valid' | 'invalid'
 
@@ -11,7 +10,7 @@ export interface ValidationResult {
 /**
  * Validate an API key by making a lightweight API call to the provider.
  * - ChatGPT: Uses models list endpoint (no tokens consumed)
- * - Claude: Uses models list endpoint (no tokens consumed)
+ * - Claude: Uses the authenticated models endpoint (no generation)
  * - Gemini: Uses models list endpoint (no tokens consumed)
  */
 export async function validateApiKey(
@@ -31,6 +30,8 @@ export async function validateApiKey(
         return await validateChatGPT(apiKey, controller.signal)
       case 'claude':
         return await validateClaude(apiKey, controller.signal)
+      case 'openrouter':
+        return await validateOpenRouter(apiKey, controller.signal)
       case 'gemini':
         return await validateGemini(apiKey, controller.signal)
       default:
@@ -63,25 +64,24 @@ async function validateChatGPT(apiKey: string, signal: AbortSignal): Promise<Val
   return parseOpenAIError(response.status, errorText)
 }
 
+async function validateOpenRouter(apiKey: string, signal: AbortSignal): Promise<ValidationResult> {
+  const response = await fetch('https://openrouter.ai/api/v1/key', {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${apiKey}` },
+    signal
+  })
+  if (response.ok) return { valid: true }
+  return parseOpenAIError(response.status, await response.text())
+}
+
 async function validateClaude(apiKey: string, signal: AbortSignal): Promise<ValidationResult> {
-  // Claude doesn't have a lightweight models list endpoint that works with API keys
-  // Use a minimal message request to validate
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
+  const response = await fetch('https://api.anthropic.com/v1/models?limit=1', {
+    method: 'GET',
     headers: {
-      'Content-Type': 'application/json',
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true'
     },
-    body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: 1,
-      messages: [{
-        role: 'user',
-        content: 'Hi'
-      }]
-    }),
     signal
   })
 

@@ -1,8 +1,6 @@
-import { AIProvider, VariantContext } from '../types'
-
-export const GEMINI_MODEL = 'gemini-3.6-flash'
-export const CLAUDE_MODEL = 'claude-haiku-4-5'
-export const OPENAI_MODEL = 'gpt-5.6-luna'
+import { AIProvider, ModelSelection, VariantContext } from '../types'
+import { CLAUDE_MODEL, GEMINI_MODEL, GLM_MODEL, OPENAI_MODEL, selectedModel } from './models'
+export { CLAUDE_MODEL, GEMINI_MODEL, GLM_MODEL, OPENAI_MODEL } from './models'
 
 export const DEFAULT_PROMPT = `Write a brief description for a design system component.
 
@@ -56,6 +54,8 @@ export function getProviderDisplayName(provider: AIProvider): string {
       return 'Claude'
     case 'gemini':
       return 'Gemini'
+    case 'openrouter':
+      return 'OpenRouter'
     default:
       return provider
   }
@@ -130,7 +130,8 @@ async function generateWithGemini(
   apiKey: string,
   prompt: string,
   imageBase64?: string,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  model: string = GEMINI_MODEL
 ): Promise<string> {
   const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = []
 
@@ -145,7 +146,7 @@ async function generateWithGemini(
   parts.push({ text: prompt })
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: {
@@ -166,6 +167,7 @@ async function generateWithGemini(
   }
 
   const data = await response.json()
+  if (data.candidates?.[0]?.finishReason === 'MAX_TOKENS') throw new Error('The selected model reached its response limit.')
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text
 
   if (!text) {
@@ -179,7 +181,8 @@ async function generateWithClaude(
   apiKey: string,
   prompt: string,
   imageBase64?: string,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  model: string = CLAUDE_MODEL
 ): Promise<string> {
   type ContentBlock = { type: 'text'; text: string } | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
   const content: ContentBlock[] = []
@@ -205,8 +208,8 @@ async function generateWithClaude(
       'anthropic-dangerous-direct-browser-access': 'true'
     },
     body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: 256,
+      model,
+      max_tokens: model === CLAUDE_MODEL ? 256 : 4096,
       messages: [{
         role: 'user',
         content: imageBase64 ? content : prompt
@@ -221,7 +224,8 @@ async function generateWithClaude(
   }
 
   const data = await response.json()
-  const text = data.content?.[0]?.text
+  if (data.stop_reason === 'max_tokens') throw new Error('The selected model reached its response limit.')
+  const text = data.content?.find((block: { type?: string; text?: string }) => block.type === 'text' || typeof block.text === 'string')?.text
 
   if (!text) {
     throw new Error('No response from Claude')
@@ -234,7 +238,8 @@ async function generateWithChatGPT(
   apiKey: string,
   prompt: string,
   imageBase64?: string,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  model: string = OPENAI_MODEL
 ): Promise<string> {
   type ContentPart =
     | { type: 'input_text'; text: string }
@@ -256,8 +261,9 @@ async function generateWithChatGPT(
       'Authorization': `Bearer ${apiKey}`
     },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
-      max_output_tokens: 256,
+      model,
+      ...(model === OPENAI_MODEL ? { reasoning: { effort: 'none' } } : {}),
+      max_output_tokens: model === OPENAI_MODEL ? 256 : 4096,
       input: [{
         role: 'user',
         content
@@ -272,6 +278,7 @@ async function generateWithChatGPT(
   }
 
   const data = await response.json()
+  if (data.status === 'incomplete') throw new Error('The selected model reached its response limit.')
   const text = data.output_text || data.output
     ?.flatMap((item: { content?: Array<{ type?: string; text?: string }> }) => item.content || [])
     .find((item: { type?: string; text?: string }) => item.type === 'output_text')?.text
@@ -280,6 +287,63 @@ async function generateWithChatGPT(
     throw new Error('No response from ChatGPT')
   }
 
+  return text.trim()
+}
+
+export function openRouterReasoning(model: ModelSelection) {
+  const reasoning = model.reasoning || (model.id === GLM_MODEL ? selectedModel('openrouter').reasoning : undefined)
+  if (!reasoning) return {}
+  if (!reasoning.mandatory) return { reasoning: { enabled: false, exclude: true } }
+  const effort = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+    .find(value => value !== 'none' && reasoning.supportedEfforts?.includes(value))
+  return { reasoning: { ...(effort ? { effort } : {}), exclude: true } }
+}
+
+async function generateWithOpenRouter(
+  apiKey: string,
+  prompt: string,
+  imageBase64?: string,
+  abortSignal?: AbortSignal,
+  model: ModelSelection = selectedModel('openrouter')
+): Promise<string> {
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: model.id,
+      ...openRouterReasoning(model),
+      max_tokens: 4096,
+      messages: [{
+        role: 'user',
+        content: imageBase64
+          ? [
+              { type: 'text', text: prompt },
+              { type: 'image_url', image_url: { url: `data:image/png;base64,${imageBase64}` } }
+            ]
+          : prompt
+      }]
+    }),
+    signal: abortSignal
+  })
+
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Invalid OpenRouter API key. Check Settings.')
+    if (response.status === 402) throw new Error('OpenRouter credits are exhausted. Add credits to your account.')
+    if (response.status === 429) throw new Error('OpenRouter is rate limiting requests. Try again shortly.')
+    throw new Error(`OpenRouter request failed (${response.status}). Try again shortly.`)
+  }
+
+  const data = await response.json()
+  if (data.error) throw new Error('OpenRouter could not complete the request. Try again shortly.')
+  const choice = data.choices?.[0]
+  if (choice?.finish_reason === 'length') {
+    throw new Error('The selected model reached its response limit. Try a smaller component or variant set.')
+  }
+  const text = choice?.message?.content
+  if (typeof text !== 'string' || !text.trim()) throw new Error('No description returned by OpenRouter.')
   return text.trim()
 }
 
@@ -295,8 +359,13 @@ export async function generateDescription(
   imageBase64?: string,
   iconOptions?: { isIcon?: boolean; customIconPrompt?: string },
   variantContext?: VariantContext[],
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  modelOverride?: ModelSelection
 ): Promise<string> {
+  const model = modelOverride?.id.trim() ? modelOverride : selectedModel(provider)
+  if (imageBase64 && model.supportsImages === false) {
+    throw new Error('This model does not accept images. Choose an image-capable model, or turn off image inclusion and icon mode.')
+  }
   const prompt = buildPrompt(
     componentName,
     componentType,
@@ -310,11 +379,13 @@ export async function generateDescription(
 
   switch (provider) {
     case 'gemini':
-      return generateWithGemini(apiKey, prompt, imageBase64, abortSignal)
+      return generateWithGemini(apiKey, prompt, imageBase64, abortSignal, model.id)
     case 'claude':
-      return generateWithClaude(apiKey, prompt, imageBase64, abortSignal)
+      return generateWithClaude(apiKey, prompt, imageBase64, abortSignal, model.id)
     case 'chatgpt':
-      return generateWithChatGPT(apiKey, prompt, imageBase64, abortSignal)
+      return generateWithChatGPT(apiKey, prompt, imageBase64, abortSignal, model.id)
+    case 'openrouter':
+      return generateWithOpenRouter(apiKey, prompt, imageBase64, abortSignal, model)
     default:
       throw new Error(`Unknown provider: ${provider}`)
   }

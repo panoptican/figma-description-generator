@@ -16,9 +16,11 @@ import {
   VerticalSpace
 } from '@create-figma-plugin/ui'
 import { h } from 'preact'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 
-import { AIProvider, Settings } from '../types'
+import { AIProvider, ModelSelection, Settings } from '../types'
+import { DEFAULT_MODELS, loadModels, selectedModel } from '../services/models'
+import { HelpTip } from './HelpTip'
 import { validateApiKey, ValidationStatus } from '../services/validation'
 
 interface SettingsModalProps {
@@ -26,6 +28,7 @@ interface SettingsModalProps {
   settings: Settings
   onClose: () => void
   onSave: (settings: Settings) => void
+  onReset: () => void
   defaultPrompt: string
   defaultVariantPrompt: string
   defaultIconPrompt: string
@@ -36,7 +39,8 @@ type SettingsTab = 'Setup' | 'Prompts'
 const PROVIDER_OPTIONS: DropdownOption[] = [
   { value: 'chatgpt', text: 'ChatGPT (OpenAI)' },
   { value: 'claude', text: 'Claude (Anthropic)' },
-  { value: 'gemini', text: 'Gemini (Google)' }
+  { value: 'gemini', text: 'Gemini (Google)' },
+  { value: 'openrouter', text: 'OpenRouter' }
 ]
 
 const TEXTAREA_STYLE = {
@@ -57,6 +61,7 @@ export function SettingsModal({
   settings,
   onClose,
   onSave,
+  onReset,
   defaultPrompt,
   defaultVariantPrompt,
   defaultIconPrompt
@@ -71,9 +76,77 @@ export function SettingsModal({
   const [overwriteExisting, setOverwriteExisting] = useState(settings.overwriteExisting)
   const [validationStatus, setValidationStatus] = useState<ValidationStatus>('idle')
   const [validationError, setValidationError] = useState<string | undefined>()
+  const [confirmReset, setConfirmReset] = useState(false)
+  const cancelResetRef = useRef<HTMLButtonElement>(null)
+  const resetButtonRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (confirmReset) cancelResetRef.current?.focus()
+  }, [confirmReset])
+
   const [activeTab, setActiveTab] = useState<SettingsTab>('Setup')
+  const [models, setModels] = useState(settings.models || {})
+  const [catalog, setCatalog] = useState<ModelSelection[]>([])
+  const [customModel, setCustomModel] = useState(false)
+  const [modelsLoading, setModelsLoading] = useState(false)
+  const [modelError, setModelError] = useState<string>()
+  const catalogRequest = useRef<AbortController | null>(null)
+  const providerKeys = useRef<Partial<Record<AIProvider, string>>>({ [settings.provider]: settings.apiKey })
+  const validationRequest = useRef(0)
+  const model = selectedModel(provider, models)
 
   useEffect(() => {
+    catalogRequest.current?.abort()
+    catalogRequest.current = null
+    validationRequest.current++
+    setCatalog([])
+    setCustomModel(false)
+    setModelError(undefined)
+    setModelsLoading(false)
+    return () => { catalogRequest.current?.abort(); validationRequest.current++ }
+  }, [provider, apiKey, isOpen])
+
+  async function handleLoadModels() {
+    catalogRequest.current?.abort()
+    const controller = new AbortController()
+    catalogRequest.current = controller
+    setModelsLoading(true)
+    setModelError(undefined)
+    const timeout = setTimeout(() => controller.abort(), 15000)
+    try {
+      const available = await loadModels(provider, apiKey, controller.signal)
+      if (catalogRequest.current !== controller) return
+      setCatalog(available)
+      if (!available.length) setModelError('No text models were returned. You can enter a model ID instead.')
+      // Refresh capabilities for the chosen ID without changing the user's choice.
+      const refreshed = available.find(item => item.id === model.id)
+      if (refreshed) setModels(previous => ({ ...previous, [provider]: refreshed }))
+    } catch (error) {
+      if (catalogRequest.current !== controller) return
+      setModelError(controller.signal.aborted ? 'Loading models timed out. Try again.'
+        : error instanceof Error ? error.message : 'Could not load models.')
+    } finally {
+      clearTimeout(timeout)
+      if (catalogRequest.current === controller) setModelsLoading(false)
+    }
+  }
+
+  const modelOptions: DropdownOption[] = [...Array.from(new Map([
+    DEFAULT_MODELS[provider], model, ...catalog
+  ].map(item => [item.id, { value: item.id, text: item.name === item.id ? item.id : `${item.name} (${item.id})` }])).values()),
+    { value: '__custom__', text: 'Enter a model ID…' }
+  ]
+
+
+  useEffect(() => {
+    setConfirmReset(false)
+    catalogRequest.current?.abort()
+    catalogRequest.current = null
+    setCatalog([])
+    setCustomModel(false)
+    setModelError(undefined)
+    setModelsLoading(false)
+    setModels(settings.models || {})
+    providerKeys.current = { [settings.provider]: settings.apiKey }
     setProvider(settings.provider)
     setApiKey(settings.apiKey)
     setCustomPrompt(settings.customPrompt)
@@ -96,13 +169,17 @@ export function SettingsModal({
       customIconPrompt,
       includeImage,
       showVariants,
-      overwriteExisting
+      overwriteExisting,
+      models
     })
     onClose()
   }
 
   function handleProviderChange(event: h.JSX.TargetedEvent<HTMLInputElement>) {
-    setProvider(event.currentTarget.value as AIProvider)
+    const nextProvider = event.currentTarget.value as AIProvider
+    providerKeys.current[provider] = apiKey
+    setProvider(nextProvider)
+    setApiKey(providerKeys.current[nextProvider] || '')
     setValidationStatus('idle')
     setValidationError(undefined)
   }
@@ -122,11 +199,13 @@ export function SettingsModal({
   }
 
   async function handleValidate() {
+    const request = ++validationRequest.current
     setValidationStatus('validating')
     setValidationError(undefined)
 
     const result = await validateApiKey(provider, apiKey)
 
+    if (request !== validationRequest.current) return
     if (result.valid) {
       setValidationStatus('valid')
     } else {
@@ -135,17 +214,17 @@ export function SettingsModal({
     }
   }
 
-  function getProviderHelpText(): string {
-    switch (provider) {
-      case 'chatgpt':
-        return 'Get your API key from platform.openai.com'
-      case 'claude':
-        return 'Get your API key from console.anthropic.com'
-      case 'gemini':
-        return 'Get your API key from aistudio.google.com'
-      default:
-        return ''
-    }
+  const providerKeyLinks: Record<AIProvider, { label: string; url: string }> = {
+    chatgpt: { label: 'platform.openai.com', url: 'https://platform.openai.com/api-keys' },
+    claude: { label: 'console.anthropic.com', url: 'https://console.anthropic.com/settings/keys' },
+    gemini: { label: 'aistudio.google.com', url: 'https://aistudio.google.com/apikey' },
+    openrouter: { label: 'openrouter.ai', url: 'https://openrouter.ai/settings/keys' }
+  }
+  const keyLink = providerKeyLinks[provider]
+
+  function cancelReset() {
+    setConfirmReset(false)
+    setTimeout(() => resetButtonRef.current?.focus(), 0)
   }
 
   const panelStyle = {
@@ -160,21 +239,23 @@ export function SettingsModal({
         <Bold>AI Provider</Bold>
       </Text>
       <VerticalSpace space="small" />
-      <Dropdown
-        options={PROVIDER_OPTIONS}
-        value={provider}
-        onChange={handleProviderChange}
-      />
+      <Text><Muted>Use your own provider API account and key. Provider charges may apply.</Muted></Text>
+      <VerticalSpace space="small" />
+      <Dropdown variant="border" options={PROVIDER_OPTIONS} value={provider} onChange={handleProviderChange} />
 
       <VerticalSpace space="large" />
 
-      <Text>
-        <Bold>API Key</Bold>
-      </Text>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text><Bold>API Key</Bold></Text>
+        <HelpTip id="api-key-details" label="API key privacy details" text="Your key is saved in Figma’s local plugin storage. OpenRouter routes generation requests to a model host it selects; the other options connect directly to their providers. Validation and model browsing do not generate descriptions." />
+      </div>
+      <VerticalSpace space="small" />
+      <Text><Muted>Get your API key from <Link href={keyLink.url} target="_blank">{keyLink.label}</Link>.</Muted></Text>
       <VerticalSpace space="small" />
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
         <div style={{ flex: 1 }}>
           <Textbox
+            variant="border"
             placeholder="Enter your API key..."
             value={apiKey}
             onValueInput={handleApiKeyChange}
@@ -219,12 +300,63 @@ export function SettingsModal({
           </Text>
         </div>
       )}
-      {validationStatus === 'idle' && (
-        <Text>
-          <Muted>{getProviderHelpText()}</Muted>
-        </Text>
-      )}
+      <VerticalSpace space="large" />
 
+      <Text><Bold>Model</Bold></Text>
+      <VerticalSpace space="small" />
+      <Text><Muted>We recommend {DEFAULT_MODELS[provider].name} as a low-cost starting point for component descriptions.</Muted></Text>
+      <VerticalSpace space="small" />
+      <Dropdown
+        variant="border"
+        options={modelOptions}
+        value={customModel ? '__custom__' : model.id}
+        onValueChange={(id) => {
+          setCustomModel(id === '__custom__')
+          if (id !== '__custom__') {
+            const selection = catalog.find(item => item.id === id) || (id === model.id ? model : DEFAULT_MODELS[provider])
+            setModels(previous => ({ ...previous, [provider]: selection }))
+          }
+        }}
+      />
+      {customModel && <VerticalSpace space="small" />}
+      {customModel && (
+        <Textbox
+          placeholder="Model ID"
+          value={models[provider]?.id || ''}
+          onValueInput={(id) => setModels(previous => ({ ...previous, [provider]: { id: id.trim(), name: id.trim() } }))}
+        />
+      )}
+      <VerticalSpace space="extraSmall" />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text>
+          <Link href="#"
+            aria-disabled={modelsLoading || (provider !== 'openrouter' && !apiKey.trim())}
+            onClick={(event) => {
+              event.preventDefault()
+              if (!modelsLoading && (provider === 'openrouter' || apiKey.trim())) void handleLoadModels()
+            }}
+            style={{ opacity: modelsLoading || (provider !== 'openrouter' && !apiKey.trim()) ? 0.5 : 1 }}>
+            {modelsLoading ? 'Refreshing models…' : 'Refresh model list'}
+          </Link>
+        </Text>
+        {model.id !== DEFAULT_MODELS[provider].id && (
+          <Link href="#" onClick={(event) => {
+            event.preventDefault()
+            catalogRequest.current?.abort()
+            catalogRequest.current = null
+            setModelsLoading(false)
+            setModelError(undefined)
+            setCustomModel(false)
+            setModels(previous => {
+              const next = { ...previous }
+              delete next[provider]
+              return next
+            })
+          }}>Reset to default</Link>
+        )}
+      </div>
+      {modelError && <Text><Muted>{modelError}</Muted></Text>}
+      {model.supportsImages === false && <Text><Muted>This model is text-only. Turn off image inclusion and icon mode before generating.</Muted></Text>}
       <VerticalSpace space="large" />
 
       <Checkbox
@@ -235,7 +367,7 @@ export function SettingsModal({
       </Checkbox>
       <VerticalSpace space="small" />
       <Text>
-        <Muted>Sends a PNG of each component to the AI for better descriptions</Muted>
+        <Muted>Generation sends component names, properties, variant context, and your prompt to the provider. Enable this to also send a PNG. Icon mode always attempts to include a PNG, even when this is off.</Muted>
       </Text>
 
       <VerticalSpace space="medium" />
@@ -249,7 +381,7 @@ export function SettingsModal({
       </Checkbox>
       <VerticalSpace space="extraSmall" />
       <Text>
-        <Muted>Generate on a row still replaces the current description.</Muted>
+        <Muted>Generation applies immediately. Row and set generation still replace existing descriptions. Manual edits autosave.</Muted>
       </Text>
     </div>
   )
@@ -320,14 +452,34 @@ export function SettingsModal({
       />
       <VerticalSpace space="small" />
       <Text>
-        <Muted>Variables: {'{icon_name}'}, {'{parentName}'} · Always includes component image</Muted>
+        <Muted>Variables: {'{icon_name}'}, {'{parentName}'} · Attempts to include component image</Muted>
       </Text>
     </div>
   )
 
   return (
-    <Modal open={isOpen} onCloseButtonClick={onClose} title="Settings">
-      <div style={{ width: '480px' }}>
+    <Modal open={isOpen} onCloseButtonClick={confirmReset ? cancelReset : onClose} title={confirmReset ? 'Reset settings?' : 'Settings'}>
+      <div style={{ width: '480px' }} onKeyDown={(event) => {
+        if (confirmReset && event.key === 'Escape') {
+          event.stopPropagation()
+          cancelReset()
+        }
+      }}>
+        {confirmReset ? <div role="alertdialog" aria-label="Reset settings?" aria-describedby="reset-settings-description" style={{ padding: '16px' }}>
+          <Text id="reset-settings-description">This clears your saved API key and restores default preferences, prompts, model choices, and icon overrides. Component descriptions won’t change. Reset takes effect immediately.</Text>
+          <VerticalSpace space="large" />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            <Button ref={cancelResetRef} secondary onClick={cancelReset}>Keep settings</Button>
+            <Button onClick={() => {
+              catalogRequest.current?.abort()
+              catalogRequest.current = null
+              validationRequest.current++
+              providerKeys.current = {}
+              onReset()
+              setConfirmReset(false)
+            }}>Reset settings</Button>
+          </div>
+        </div> : <div>
         <Tabs
           options={[
             { value: 'Setup', children: setupPanel },
@@ -345,13 +497,17 @@ export function SettingsModal({
             borderTop: '1px solid var(--figma-color-border)'
           }}
         >
+          <div style={{ marginRight: 'auto' }}>
+            <Button ref={resetButtonRef} secondary onClick={() => setConfirmReset(true)}>Reset Settings</Button>
+          </div>
           <Button onClick={onClose} secondary>
             Cancel
           </Button>
-          <Button onClick={handleSave}>
+          <Button onClick={handleSave} disabled={customModel && !models[provider]?.id.trim()}>
             Save
           </Button>
         </div>
+        </div>}
       </div>
     </Modal>
   )

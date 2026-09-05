@@ -1,6 +1,6 @@
 import { EventHandler } from '@create-figma-plugin/utilities'
 
-export type AIProvider = 'gemini' | 'claude' | 'chatgpt'
+export type AIProvider = 'gemini' | 'claude' | 'chatgpt' | 'openrouter'
 export type Scope = 'current-page' | 'all-pages'
 
 export interface VariantContext {
@@ -22,6 +22,13 @@ export interface ComponentData {
   isIcon?: boolean
 }
 
+export interface ModelSelection {
+  id: string
+  name: string
+  supportsImages?: boolean
+  reasoning?: { mandatory?: boolean; supportedEfforts?: string[] }
+}
+
 export interface Settings {
   provider: AIProvider
   apiKey: string
@@ -32,6 +39,7 @@ export interface Settings {
   showVariants: boolean
   overwriteExisting: boolean
   iconOverrides?: Record<string, boolean>
+  models?: Partial<Record<AIProvider, ModelSelection>>
 }
 
 export interface LoadComponentsHandler extends EventHandler {

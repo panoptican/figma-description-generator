@@ -1,3 +1,4 @@
+import { createDefaultSettings } from '../settings'
 import { emit, on } from '@create-figma-plugin/utilities'
 import { h } from 'preact'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
@@ -25,6 +26,7 @@ import {
   DEFAULT_ICON_PROMPT,
   getProviderDisplayName
 } from '../services/ai'
+import { selectedModel } from '../services/models'
 import { getComponentSetMembers, getGenerationBatches } from '../utils/generationBatches'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { Header } from './Header'
@@ -36,16 +38,7 @@ interface AppProps {
   currentPageName: string
 }
 
-const DEFAULT_SETTINGS: Settings = {
-  provider: 'chatgpt',
-  apiKey: '',
-  customPrompt: '',
-  customVariantPrompt: '',
-  customIconPrompt: '',
-  includeImage: false,
-  showVariants: true,
-  overwriteExisting: false
-}
+const DEFAULT_SETTINGS = createDefaultSettings()
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError'
@@ -238,7 +231,8 @@ export function App({ scope, currentPageName }: AppProps) {
         imageBase64,
         { isIcon, customIconPrompt: settings.customIconPrompt || undefined },
         component.variantContext,
-        abortSignal
+        abortSignal,
+        selectedModel(settings.provider, settings.models)
       )
 
       return description
@@ -354,6 +348,13 @@ export function App({ scope, currentPageName }: AppProps) {
     setSettings(toSave)
     emit<SaveSettingsHandler>('SAVE_SETTINGS', toSave)
   }, [iconOverrides])
+
+  const handleResetSettings = useCallback(() => {
+    const defaults = createDefaultSettings()
+    setSettings(defaults)
+    setIconOverrides({})
+    emit<SaveSettingsHandler>('SAVE_SETTINGS', defaults)
+  }, [])
 
   const handleGenerateAll = useCallback(async () => {
     if (!settings.apiKey) return
@@ -581,6 +582,7 @@ export function App({ scope, currentPageName }: AppProps) {
         settings={settings}
         onClose={() => setIsSettingsOpen(false)}
         onSave={handleSaveSettings}
+        onReset={handleResetSettings}
         defaultPrompt={DEFAULT_PROMPT}
         defaultVariantPrompt={DEFAULT_VARIANT_PROMPT}
         defaultIconPrompt={DEFAULT_ICON_PROMPT}
