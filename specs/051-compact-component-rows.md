@@ -51,7 +51,7 @@ As a designer auditing my component descriptions, I want to see many components 
 - **Textarea** 2 lines default, resizable
 - **Status text** left-aligned: "Generated via Claude", "From cache", "Saving..."
 - **Action buttons** right-aligned: Generate, Revert (if previous exists)
-- **Collapse**: Click outside, press Escape, or click the row header area
+- **Collapse**: Press Escape or click the row header area
 
 ## Acceptance Criteria
 - [x] Collapsed rows are single-line, ~36px height
@@ -67,7 +67,7 @@ As a designer auditing my component descriptions, I want to see many components 
 - [x] Status text appears left of action buttons
 - [x] Collapsed rows distinguish component sets, standalone components, and variants; variants identify their parent
 - [x] Generate and Revert buttons right-aligned
-- [x] Clicking outside or pressing Escape collapses the row
+- [x] Pressing Escape or clicking the row header collapses the row (click-outside removed to support multiple expanded rows and prevent modal/header click interference)
 - [x] Only one row can be expanded at a time (optional - discuss)
 
 ## Technical Notes
@@ -89,7 +89,8 @@ As a designer auditing my component descriptions, I want to see many components 
 - Generated rows: very light yellow background with a yellow status dot
 - Expanded rows: status background, name header, type/properties as muted text, 2-line textarea
 - Component-set rows are labeled as parents; variant rows are indented and labeled "Variant of {parentName}"
-- Escape key collapses expanded row via document keydown listener
+- Escape key collapses expanded row via document keydown listener (disabled when modal is open)
+- Click-outside handler removed to allow multiple expanded rows side by side and prevent hijacking header and modal clicks
 - Removed column headers (Layer Name, Description, Actions) - not needed with new design
 - Removed TYPE_COLORS badge in favor of text-based type display
 

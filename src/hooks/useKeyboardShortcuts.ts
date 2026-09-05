@@ -22,7 +22,8 @@ export interface KeyboardShortcutHandlers {
 export function useKeyboardShortcuts(
   handlers: KeyboardShortcutHandlers,
   searchInputRef?: MutableRef<HTMLInputElement | null>,
-  enabled: boolean = true
+  enabled: boolean = true,
+  isModalOpen: boolean = false
 ) {
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
     if (!enabled) return
@@ -36,6 +37,9 @@ export function useKeyboardShortcuts(
       handlers.onCloseModal?.()
       return
     }
+
+    // Keep Escape available, but leave modal editing and focus to the dialog.
+    if (isModalOpen) return
 
     // Don't trigger shortcuts when typing in input fields (except Escape)
     const target = event.target as HTMLElement
@@ -78,7 +82,7 @@ export function useKeyboardShortcuts(
       handlers.onRevert?.()
       return
     }
-  }, [handlers, searchInputRef, enabled])
+  }, [handlers, searchInputRef, enabled, isModalOpen])
 
   useEffect(() => {
     if (!enabled) return

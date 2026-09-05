@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { getModifierKeyLabel, getShortcutLabel } from './useKeyboardShortcuts'
+import { getModifierKeyLabel, getShortcutLabel, useKeyboardShortcuts } from './useKeyboardShortcuts'
+
+// Exercise the hook's registered listener without a browser or rendering library.
+vi.mock('preact/hooks', () => ({
+  useCallback: (callback: unknown) => callback,
+  useEffect: (effect: () => void) => effect(),
+}))
 
 // Mock navigator.platform for testing
 const mockNavigator = (platform: string) => {
@@ -100,7 +106,60 @@ describe('getShortcutLabel', () => {
   })
 })
 
-// Note: Testing the useKeyboardShortcuts hook would require a DOM environment
-// and Preact testing utilities. The core functionality is tested via the
-// helper functions above, and integration testing would be done manually
-// in the Figma plugin environment.
+describe('shortcuts with Settings open', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  function setup(isModalOpen: boolean) {
+    let listener: (event: KeyboardEvent) => void
+    vi.stubGlobal('window', {
+      addEventListener: vi.fn((_name, callback) => { listener = callback }),
+      removeEventListener: vi.fn(),
+    })
+    const handlers = {
+      onGenerateSingle: vi.fn(), onGenerateAll: vi.fn(), onFocusSearch: vi.fn(),
+      onCloseModal: vi.fn(), onRevert: vi.fn(),
+    }
+    const input = { focus: vi.fn(), select: vi.fn() }
+    useKeyboardShortcuts(handlers, { current: input as unknown as HTMLInputElement }, true, isModalOpen)
+    return { handlers, input, press: (key: string, shiftKey = false, tagName = 'BUTTON', metaKey = true) => {
+      const event = {
+        key, shiftKey, metaKey, ctrlKey: !metaKey,
+        target: { tagName }, preventDefault: vi.fn(),
+      }
+      listener!(event as unknown as KeyboardEvent)
+      return event
+    } }
+  }
+
+  it.each([true, false])('blocks background commands with metaKey=%s', (metaKey) => {
+    const { handlers, input, press } = setup(true)
+    for (const tag of ['BUTTON', 'INPUT', 'TEXTAREA']) {
+      for (const [key, shift] of [['g', false], ['g', true], ['f', false], ['z', false]] as const) {
+        press(key, shift, tag, metaKey)
+      }
+    }
+    Object.values(handlers).forEach(handler => expect(handler).not.toHaveBeenCalled())
+    expect(input.focus).not.toHaveBeenCalled()
+    expect(input.select).not.toHaveBeenCalled()
+  })
+
+  it('keeps Escape working and leaves native text undo untouched', () => {
+    const { handlers, press } = setup(true)
+    expect(press('z', false, 'TEXTAREA').preventDefault).not.toHaveBeenCalled()
+    expect(press('Escape').preventDefault).toHaveBeenCalledOnce()
+    expect(handlers.onCloseModal).toHaveBeenCalledOnce()
+  })
+
+  it('runs commands again when Settings is closed', () => {
+    const { handlers, input, press } = setup(false)
+    press('g')
+    press('g', true)
+    press('f')
+    press('z')
+    expect(handlers.onGenerateSingle).toHaveBeenCalledOnce()
+    expect(handlers.onGenerateAll).toHaveBeenCalledOnce()
+    expect(handlers.onFocusSearch).toHaveBeenCalledOnce()
+    expect(handlers.onRevert).toHaveBeenCalledOnce()
+    expect(input.focus).toHaveBeenCalledOnce()
+  })
+})

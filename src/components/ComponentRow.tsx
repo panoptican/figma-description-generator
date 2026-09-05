@@ -7,6 +7,7 @@ import { getDescriptionStatus } from '../utils/descriptionStatus'
 
 interface ComponentRowProps {
   component: ComponentData
+  isModalOpen?: boolean
   onGenerate: (component: ComponentData) => Promise<string>
   onGenerateComponentSet: (component: ComponentData) => Promise<void>
   onGenerated: (id: string) => void
@@ -37,6 +38,7 @@ function truncateDescription(text: string | undefined, maxLength: number = 60): 
 
 export function ComponentRow({
   component,
+  isModalOpen = false,
   onGenerate,
   onGenerateComponentSet,
   onConfirm,
@@ -64,7 +66,6 @@ export function ComponentRow({
   const [error, setError] = useState<string | null>(null)
   const [isDirty, setIsDirty] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const rowRef = useRef<HTMLDivElement>(null)
   const descriptionRef = useRef(description)
   const isDirtyRef = useRef(isDirty)
   const currentDescriptionRef = useRef(component.currentDescription)
@@ -116,7 +117,7 @@ export function ComponentRow({
 
   // Handle Escape key to collapse
   useEffect(() => {
-    if (!isExpanded) return
+    if (!isExpanded || isModalOpen) return
 
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -126,25 +127,7 @@ export function ComponentRow({
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isExpanded, component.id, onToggleExpand])
-
-  // Collapse when clicking outside the expanded row.
-  useEffect(() => {
-    if (!isExpanded) return
-
-    function handleClickOutside(e: MouseEvent) {
-      if (rowRef.current === null) {
-        return
-      }
-      const target = e.target as Node | null
-      if (target !== null && !rowRef.current.contains(target)) {
-        onToggleExpand(component.id)
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isExpanded, component.id, onToggleExpand])
+  }, [isExpanded, isModalOpen, component.id, onToggleExpand])
 
   const descriptionStatus = getDescriptionStatus(component.currentDescription, wasGeneratedThisSession)
   const isEmpty = descriptionStatus === 'missing'
@@ -242,7 +225,6 @@ export function ComponentRow({
     return (
       <div
         ref={(element) => {
-          rowRef.current = element
           onRowRef(component.id, element)
         }}
         onClick={handleRowClick}
@@ -369,7 +351,6 @@ export function ComponentRow({
   return (
     <div
       ref={(element) => {
-        rowRef.current = element
         onRowRef(component.id, element)
       }}
       style={{
@@ -452,7 +433,10 @@ export function ComponentRow({
           setIsDirty(true)
           setError(null)
         }}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation()
+          onRowSelect(component.id)
+        }}
         rows={2}
         placeholder="Enter description..."
         style={{

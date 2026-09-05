@@ -507,7 +507,8 @@ export function App({ scope, currentPageName }: AppProps) {
       }
     },
     searchInputRef,
-    !isLoading
+    !isLoading,
+    isSettingsOpen
   )
 
   if (isLoading) {
@@ -556,6 +557,7 @@ export function App({ scope, currentPageName }: AppProps) {
         components={filteredComponents}
         searchValue={searchValue}
         scope={scope}
+        isModalOpen={isSettingsOpen}
         onGenerate={handleGenerateForRow}
         onGenerateComponentSet={handleGenerateComponentSet}
         onGenerated={markGeneratedThisSession}
