@@ -376,6 +376,9 @@ export function SettingsModal({
         <Text>Show variants in list</Text>
       </Checkbox>
       <VerticalSpace space="extraSmall" />
+      <Text><Muted>Hidden variants are excluded from generation.</Muted></Text>
+      <VerticalSpace space="small" />
+      <VerticalSpace space="extraSmall" />
       <Checkbox value={overwriteExisting} onValueChange={setOverwriteExisting}>
         <Text>Overwrite existing descriptions when generating all</Text>
       </Checkbox>

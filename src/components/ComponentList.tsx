@@ -10,6 +10,7 @@ interface ComponentListProps {
   components: ComponentData[]
   searchValue: string
   scope: Scope
+  showVariants: boolean
   isModalOpen?: boolean
   onGenerate: (component: ComponentData) => Promise<string>
   onGenerateComponentSet: (component: ComponentData) => Promise<void>
@@ -34,6 +35,7 @@ export function ComponentList({
   searchValue,
   scope,
   isModalOpen = false,
+  showVariants,
   onGenerate,
   onGenerateComponentSet,
   onGenerated,
@@ -271,6 +273,7 @@ export function ComponentList({
                 <ComponentRow
                   key={component.id}
                   component={component}
+                  showVariants={showVariants}
                   isModalOpen={isModalOpen}
                   onGenerate={onGenerate}
                   onGenerateComponentSet={onGenerateComponentSet}

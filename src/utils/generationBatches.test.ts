@@ -73,4 +73,20 @@ describe('getGenerationBatches', () => {
 
     expect(memberIds).toEqual(['set', 'v1'])
   })
+  it.each([false, true])('excludes hidden variants from Fill and Replace batches (overwrite=%s)', (overwrite) => {
+    const visible = inventory.filter(component => component.type !== 'VARIANT')
+    const ids = getGenerationBatches(inventory, visible, overwrite, false)
+      .flatMap(batch => batch.members.map(member => member.id))
+    expect(ids).toEqual(overwrite ? ['button', 'card', 'spacer', 'set'] : ['button', 'spacer', 'set'])
+  })
+
+  it('does not fill hidden variants when their set already has a description', () => {
+    const describedSet = { ...set, currentDescription: 'Set description' }
+    expect(getGenerationBatches([describedSet, variantMissing], [describedSet], false, false)).toEqual([])
+  })
+
+  it('restricts set generation to the set when variants are hidden', () => {
+    expect(getComponentSetMembers(inventory, set, false).map(member => member.id)).toEqual(['set'])
+  })
+
 })

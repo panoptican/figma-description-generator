@@ -7,6 +7,7 @@ import { getDescriptionStatus } from '../utils/descriptionStatus'
 
 interface ComponentRowProps {
   component: ComponentData
+  showVariants: boolean
   isModalOpen?: boolean
   onGenerate: (component: ComponentData) => Promise<string>
   onGenerateComponentSet: (component: ComponentData) => Promise<void>
@@ -39,6 +40,7 @@ function truncateDescription(text: string | undefined, maxLength: number = 60): 
 export function ComponentRow({
   component,
   isModalOpen = false,
+  showVariants,
   onGenerate,
   onGenerateComponentSet,
   onConfirm,
@@ -496,11 +498,11 @@ export function ComponentRow({
               disabled={loading || groupLoading || isGenerating || !hasApiKey}
               loading={loading}
             >
-              {component.type === 'COMPONENT_SET' ? 'Generate this set' : 'Generate'}
+              Generate description
             </Button>
           )}
 
-          {component.type === 'COMPONENT_SET' && component.variantContext && component.variantContext.length > 0 && (
+          {showVariants && component.type === 'COMPONENT_SET' && component.variantContext && component.variantContext.length > 0 && (
             <Button
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()
@@ -508,10 +510,10 @@ export function ComponentRow({
               }}
               disabled={groupLoading || loading || isGenerating || !hasApiKey}
               loading={groupLoading}
-              title="Writes a description for this set and every variant"
+              title="Generates a description for this component set and each of its variants."
               secondary
             >
-              Generate set and variants
+              Generate all descriptions
             </Button>
           )}
 

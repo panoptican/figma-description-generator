@@ -190,7 +190,7 @@ export function App({ scope, currentPageName }: AppProps) {
     )
   })
 
-  const generationBatches = getGenerationBatches(components, filteredComponents, settings.overwriteExisting)
+  const generationBatches = getGenerationBatches(components, filteredComponents, settings.overwriteExisting, settings.showVariants)
   const generateCount = generationBatches.reduce((count, batch) => count + batch.members.length, 0)
   const selectedComponent = useMemo(
     () => filteredComponents.find((component) => component.id === selectedRowId) ?? null,
@@ -290,7 +290,7 @@ export function App({ scope, currentPageName }: AppProps) {
   }, [])
 
   const handleGenerateComponentSet = useCallback(async (componentSet: ComponentData): Promise<void> => {
-    const members = getComponentSetMembers(components, componentSet)
+    const members = getComponentSetMembers(components, componentSet, settings.showVariants)
     const failures: string[] = []
 
     for (const member of members) {
@@ -311,7 +311,7 @@ export function App({ scope, currentPageName }: AppProps) {
     if (failures.length > 0) {
       throw new Error(`Failed to generate: ${failures.join(', ')}`)
     }
-  }, [components, handleGenerate, markGeneratedThisSession, handleConfirm])
+  }, [components, settings.showVariants, handleGenerate, markGeneratedThisSession, handleConfirm])
 
   const handleReject = useCallback((id: string) => {
     // Reset is handled in ComponentRow
@@ -555,6 +555,7 @@ export function App({ scope, currentPageName }: AppProps) {
 
       <ComponentList
         components={filteredComponents}
+        showVariants={settings.showVariants}
         searchValue={searchValue}
         scope={scope}
         isModalOpen={isSettingsOpen}

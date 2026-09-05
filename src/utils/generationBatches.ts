@@ -7,17 +7,19 @@ export interface GenerationBatch {
 
 export function getComponentSetMembers(
   components: ComponentData[],
-  componentSet: ComponentData
+  componentSet: ComponentData,
+  includeVariants = true
 ): ComponentData[] {
   return components.filter((component) => (
-    component.id === componentSet.id || component.parentId === componentSet.id
+    component.id === componentSet.id || (includeVariants && component.parentId === componentSet.id)
   ))
 }
 
 export function getGenerationBatches(
   components: ComponentData[],
   filteredComponents: ComponentData[],
-  overwriteExisting: boolean
+  overwriteExisting: boolean,
+  includeVariants = true
 ): GenerationBatch[] {
   const filteredIds = new Set(filteredComponents.map((component) => component.id))
   const targets = components.filter((component) => {
@@ -29,7 +31,7 @@ export function getGenerationBatches(
       return true
     }
 
-    return component.type === 'COMPONENT_SET' && components.some((member) => (
+    return includeVariants && component.type === 'COMPONENT_SET' && components.some((member) => (
       member.parentId === component.id && filteredIds.has(member.id)
     ))
   })
@@ -37,7 +39,7 @@ export function getGenerationBatches(
   return targets
     .map((target) => {
       const members = target.type === 'COMPONENT_SET'
-        ? getComponentSetMembers(components, target)
+        ? getComponentSetMembers(components, target, includeVariants)
         : [target]
       const pendingMembers = overwriteExisting
         ? members
