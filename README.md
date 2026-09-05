@@ -1,6 +1,6 @@
 # Description Generator
 
-AI-powered Figma plugin that writes documentation-ready descriptions for components, component sets, and variants. Designers run it from the Plugins menu, pick ChatGPT, Claude, or Gemini, review the generated text, and apply it to the canvas. There is no Description Generator server and no account to create: API keys stay in Figma’s per-user plugin storage, and requests go from the plugin iframe to the provider you choose.
+AI-powered Figma plugin that writes documentation-ready descriptions for components, component sets, and variants. Designers run it from the Plugins menu and pick OpenAI, Anthropic, Google, or OpenRouter. Generated text is applied immediately to the component description; you can edit or revert it afterward. You need your own provider API account and key, and provider charges may apply. There is no Description Generator account or server: settings are saved in Figma’s local plugin storage, and requests are authenticated with your key. OpenRouter requests go through its API to its selected model host; the other options connect directly to their providers.
 
 This README is for people who want to run the plugin locally, understand how the two-context architecture works, or publish an update to the Figma Community.
 
@@ -26,11 +26,11 @@ This README is for people who want to run the plugin locally, understand how the
 
 - **Two launch scopes.** `This page` scans the active Figma page. `Entire file` scans every page in the file. Scope is chosen from the menu and does not change mid-session.
 - **Component, set, and variant rows.** Standalone components, component sets, and each variant appear as list rows. Sets carry complete variant-set context into prompts.
-- **Three AI providers.** ChatGPT (OpenAI), Claude (Anthropic), and Gemini (Google). Users supply their own API key.
+- **Four AI options.** ChatGPT (OpenAI), Claude (Anthropic), Gemini (Google), and OpenRouter. Users supply their own API key.
 - **Generate one, generate set, generate all.** Single-row generate, parent-plus-variants as an atomic set, or a document-wide run with up to three concurrent batches.
 - **Icon mode.** Auto-detects icon libraries from component or page names, forces a PNG into the prompt, and uses a naming-style icon prompt instead of prose.
 - **Inline edit and revert.** Expanded rows autosave after 800 ms. Revert swaps the last applied description with the previous one.
-- **Search, page groups, and export.** Filter by name, page, or properties. Group by page with expand/collapse. Export non-empty descriptions as CSV or JSON.
+- **Search and page groups.** Filter by name, page, or properties. Group by page with expand/collapse.
 - **Keyboard shortcuts.** Generate, generate all, focus search, revert, and close modals without leaving the keyboard.
 
 ---
@@ -65,6 +65,7 @@ Install these before the first build:
   - OpenAI: [platform.openai.com](https://platform.openai.com)
   - Anthropic: [console.anthropic.com](https://console.anthropic.com)
   - Google AI Studio: [aistudio.google.com](https://aistudio.google.com)
+  - OpenRouter: [API keys](https://openrouter.ai/settings/keys)
 
 Optional:
 
@@ -109,7 +110,7 @@ This installs Preact, the create-figma-plugin toolchain, Figma typings, TypeScri
 
 There is nothing to copy. There is no `.env.example`.
 
-API keys are entered later inside the plugin Settings modal and stored with Figma’s `saveSettingsAsync`. Do not put keys in the repo, in shell profiles used for demos, or in issue reports.
+API keys are entered later inside the plugin Settings modal and stored with Figma’s `saveSettingsAsync` in local `clientStorage`. A provider API account with access to the configured model is required; generation charges depend on the model. Key validation and model browsing do not generate text. Do not put keys in the repo, in shell profiles used for demos, or in issue reports.
 
 ### 4. Build Once (optional sanity check)
 
@@ -120,7 +121,7 @@ npm run build
 
 Expected:
 
-- Vitest: **9 files, 135 tests**, all passing
+- Vitest: all tests passing
 - `build-figma-plugin` writes `build/main.js`, `build/ui.js`, and regenerates `manifest.json`
 
 `manifest.json` is the Figma entry. The build reads the `figma-plugin` block in `package.json` and emits:
@@ -128,6 +129,7 @@ Expected:
 ```json
 {
   "api": "1.0.0",
+  "documentAccess": "dynamic-page",
   "editorType": ["figma"],
   "id": "description-generator",
   "name": "Description Generator",
@@ -141,7 +143,8 @@ Expected:
     "allowedDomains": [
       "https://api.openai.com",
       "https://api.anthropic.com",
-      "https://generativelanguage.googleapis.com"
+      "https://generativelanguage.googleapis.com",
+      "https://openrouter.ai"
     ]
   }
 }
@@ -177,7 +180,9 @@ On later code changes:
 ### 7. First-Run Settings
 
 1. Click the gear icon or **Open Settings** on the no-key banner. The modal always opens on the **Setup** tab.
-2. Choose a provider.
+2. Choose a provider. Enter its key, then click **Refresh model list** to fetch its current catalog (OpenRouter browsing does not require a key). Select a model or choose **Enter a model ID…**. Save remembers the selection for each provider. Defaults remain GPT-5.4 nano, Claude Haiku 4.5, Gemini 2.5 Flash-Lite, and GLM 5.3 Flash. Catalog failures leave the selected model usable; availability and pricing still depend on the account and model.
+
+   Switching providers clears the key field unless that provider's key was already entered during this Settings session. Save stores only the active provider's key. Saved model choices persist for all providers.
 3. Paste an API key (the field is a password input).
 4. Click **Validate** (optional; 5 second timeout). Save works even if you skip Validate.
 5. Click **Save**.
@@ -205,8 +210,7 @@ Left to right:
 2. **Search** — case-insensitive match on component name, page name, and properties. Shortcut: `⌘F` / `Ctrl+F`.
 3. **Fill N** / **Replace N** — `N` is the number of pending members in the current batch plan. **Fill** skips components that already have text; **Replace** overwrites them. Disabled without an API key or when `N` is 0. While running it becomes **Stop remaining (current/total)**.
 4. **Refresh** — explicit rescan. Tooltip is “Rescan this page” or “Rescan entire file”. Disabled while refreshing or while a batch is running.
-5. **Export** — opens CSV/JSON export. Disabled when the filtered list has no non-empty descriptions.
-6. **Settings** — one modal with **Setup** (provider, key, toggles) and **Prompts** (component, variant, and icon templates). Always opens on Setup.
+5. **Settings** — one modal with **Setup** (provider, key, toggles) and **Prompts** (component, variant, and icon templates). Always opens on Setup.
 
 ### Component list
 
@@ -218,9 +222,9 @@ Empty copy: `No matches for “{search}”.` when search has no hits; `No compon
 
 | Type | How it appears | Generate actions |
 | --- | --- | --- |
-| `COMPONENT` | Standalone component (not a child of a set) | **Generate** |
-| `COMPONENT_SET` | Parent of variants | **Generate this set** (the set only) and **Generate set and variants** (sequential) |
-| `VARIANT` | Child of a set; indented | No isolated Generate. Link: **Open “{parent}”** opens the parent. `⌘G` / `Ctrl+G` on a selected variant runs Generate set and variants on the parent. |
+| `COMPONENT` | Standalone component (not a child of a set) | **Generate description** |
+| `COMPONENT_SET` | Parent of variants | **Generate description** (the set only) and **Generate all descriptions** (sequential) |
+| `VARIANT` | Child of a set; indented | No isolated Generate. Link: **Open “{parent}”** opens the parent. `⌘G` / `Ctrl+G` on a selected variant runs Generate all descriptions on the parent. |
 
 Click the **name** to select the node on the canvas, switch to its page if needed, and zoom the viewport to it. Click the rest of the collapsed row to expand it.
 
@@ -243,12 +247,12 @@ There is no Save button.
 - Successful generate applies immediately and stores the prior text as `previousDescription`.
 - **Revert** (or `⌘Z` / `Ctrl+Z` when focus is not in a text field) swaps current and previous on both the list and the canvas. A second Revert toggles back.
 
-`overwriteExisting` does **not** protect single-row Generate, Generate this set, or Generate set and variants. Those always replace the current description. The toggle only filters Fill / Replace.
+`overwriteExisting` does **not** protect single-row Generate, Generate description, or Generate all descriptions. Those always replace the current description. The toggle only filters Fill / Replace.
 
 ### Generate All
 
 1. The run snapshots batches from the full inventory plus the current filtered list.
-2. Variant rows are never top-level targets. If search or “show variants” leaves only a variant visible, the parent set is still targeted so the set stays atomic.
+2. With Show variants in list off, Fill / Replace counts and generates sets and standalone components only. Generate all descriptions is hidden. With variants on, sets include their variants. Variant rows are never top-level targets. When variants are enabled and search leaves only a variant visible, the parent set is still targeted so the set stays atomic.
 3. With **Overwrite existing descriptions when generating all** off, members that already have a real description are dropped from the batch. Whitespace-only counts as missing.
 4. Up to **3** workers pull batches from a shared queue. Inside a set batch, members run **one after another**.
 5. **Stop remaining** sets an abort flag and aborts the in-flight `fetch`. Members already applied stay applied. A provider response that arrives after stop is **not** written to the canvas.
@@ -275,26 +279,18 @@ If export fails, generation continues without an image rather than failing the j
 
 ### Keyboard shortcuts
 
+While Settings is open, component generation, search, and revert shortcuts pause. Escape still closes Settings, and text fields retain their normal editing shortcuts.
+
 Shortcuts are registered after the list loads. `Mod` is `⌘` on Mac and `Ctrl` elsewhere.
 
 | Shortcut | Action | Notes |
 | --- | --- | --- |
-| `Mod+G` | Generate the selected row | On a variant, runs Generate set and variants on the parent. Ignored while typing in an input or textarea. |
+| `Mod+G` | Generate the selected row | On a variant, runs Generate all descriptions on the parent. Ignored while typing in an input or textarea. |
 | `Mod+Shift+G` | Generate All | No-op without a key or while Generate All is already running. |
 | `Mod+F` | Focus and select the search field | Works even when focus is already in a text field. |
 | `Mod+Z` | Revert the selected row | Ignored while typing in a text field. |
-| `Escape` | Close Settings if open, else close Export | Does **not** stop Generate All. An expanded row has its own Escape listener that collapses the row. |
+| `Escape` | Close Settings if open | Does **not** stop Generate All. An expanded row has its own Escape listener that collapses the row. |
 
-### Export
-
-Export uses the **filtered** list (search + show-variants), not the unfiltered document.
-
-| Format | Filename | Contents |
-| --- | --- | --- |
-| CSV | `component-descriptions-YYYY-MM-DD.csv` | Header plus rows: Component ID, Component Name, Page Name, Type, Properties (joined with `; `), Description. Values with commas, quotes, or newlines are RFC-style escaped. |
-| JSON | `component-descriptions-YYYY-MM-DD.json` | Pretty-printed array of `{ componentId, componentName, pageName, type, properties, description }` |
-
-Rows with empty descriptions are omitted. Download is a temporary `<a download>` click in the iframe.
 
 ---
 
@@ -310,10 +306,10 @@ The plugin is two isolated JavaScript worlds that talk over typed events.
 │  ─────────────────────────          ──────────────────────   │
 │  Figma Plugin API                   Preact App               │
 │  • findAllWithCriteria              • Header / list / rows   │
-│  • node.description writes          • Settings / Export      │
+│  • node.description writes          • Settings               │
 │  • exportAsync PNG                  • Keyboard shortcuts     │
 │  • clientStorage settings           • fetch() to AI APIs     │
-│  • selection + viewport             • CSV/JSON download      │
+│  • selection + viewport             • Inline edit / revert      │
 │           │                                    │             │
 │           └──────── emit / on (postMessage) ───┘             │
 └─────────────────────────────────────────────────────────────┘
@@ -335,21 +331,20 @@ description-generator/
 │   ├── types.ts                     # ComponentData, Settings, EventHandler contracts
 │   ├── components/
 │   │   ├── App.tsx                  # Session state, generate orchestration
-│   │   ├── Header.tsx               # Search, Generate All, refresh, export, settings
+│   │   ├── Header.tsx               # Search, Generate All, refresh, settings
 │   │   ├── ComponentList.tsx        # Page groups, expand/collapse, scroll-to-parent
 │   │   ├── ComponentRow.tsx         # Collapsed/expanded row, dirty autosave
-│   │   ├── SettingsModal.tsx        # Settings tabs: Setup (provider, key, toggles) and Prompts
-│   │   └── ExportModal.tsx          # CSV vs JSON
+│   │   └── SettingsModal.tsx        # Settings tabs: Setup (provider, key, toggles) and Prompts
 │   ├── services/
 │   │   ├── ai.ts                    # Prompts, models, provider fetch
 │   │   ├── ai.test.ts
+│   │   ├── models.ts                # Catalog loading, defaults, and model selections
 │   │   ├── validation.ts            # Lightweight API-key checks
 │   │   └── validation.test.ts
 │   ├── hooks/
 │   │   ├── useKeyboardShortcuts.ts
 │   │   └── useKeyboardShortcuts.test.ts
 │   └── utils/
-│       ├── export.ts                # CSV/JSON + data URLs
 │       ├── filters.ts               # Search, show-variants, page grouping helpers
 │       ├── generationBatches.ts     # Generate All batch plan
 │       ├── descriptionStatus.ts     # missing / existing / generated
@@ -425,7 +420,7 @@ ComponentData[]  ──COMPONENTS_LOADED──►  App state
                                               ▼
                                        filtered list
                                               │
-                    Generate / Generate set and variants / Fill N
+                    Generate / Generate all descriptions / Fill N
                                               │
                          optional EXPORT_IMAGE
                                               ▼
@@ -444,9 +439,10 @@ ComponentData[]  ──COMPONENTS_LOADED──►  App state
 
 **`src/main.ts` — plugin layer**
 
-- `getComponents(scope)` walks pages, emits a `COMPONENT_SET` row plus a `VARIANT` row per child, and skips components whose parent is already a set (those appear only as variants).
+- `getComponents(scope)` awaits each page’s `loadAsync()` before scanning, emits a `COMPONENT_SET` row plus a `VARIANT` row per child, and skips components whose parent is already a set (those appear only as variants).
 - Variant properties come from `componentPropertyDefinitions` when available, otherwise from splitting variant names on commas.
 - `isIconComponent(name, pageName)` stamps `isIcon` at scan time.
+- Node actions use `getNodeByIdAsync()`; navigation uses `setCurrentPageAsync()` for dynamic page access.
 - Current-page mode registers `figma.on('currentpagechange', …)` and unregisters it on close.
 
 **`src/components/App.tsx` — UI orchestrator**
@@ -457,11 +453,15 @@ Owns components, settings, search, Generate All progress, row errors, selection,
 
 | Provider | Model constant | Endpoint | Auth |
 | --- | --- | --- | --- |
-| ChatGPT | `gpt-5.6-luna` | `POST https://api.openai.com/v1/responses` | `Authorization: Bearer` |
+| ChatGPT | `gpt-5.4-nano` | `POST https://api.openai.com/v1/responses` | `Authorization: Bearer` |
 | Claude | `claude-haiku-4-5` | `POST https://api.anthropic.com/v1/messages` | `x-api-key` + `anthropic-version: 2023-06-01` + `anthropic-dangerous-direct-browser-access: true` |
-| Gemini | `gemini-3.6-flash` | `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key=` | Query param |
+| Gemini | `gemini-2.5-flash-lite` | `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key=` | Query param |
 
-Claude and ChatGPT cap output at 256 tokens (`max_tokens` / `max_output_tokens`). Images are PNG base64 (Claude `image` block, Gemini `inlineData`, OpenAI `input_image` data URL).
+OpenRouter defaults to `z-ai/glm-5.3-flash` and uses `POST https://openrouter.ai/api/v1/chat/completions` with an OpenRouter key. The selected model replaces the default in every provider's request. OpenRouter catalog metadata controls whether images are supported and which reasoning settings are sent: optional reasoning is disabled, and mandatory reasoning uses the lowest advertised effort. Unknown custom model capabilities use API defaults. Image requests for known text-only models are rejected with guidance to change model or image settings.
+
+The OpenAI default explicitly disables reasoning; other selected OpenAI models use their defaults. Default OpenAI and Claude models have a 256-token response limit; other selected OpenAI/Claude models and OpenRouter use 4,096 tokens to leave room for reasoning. Incomplete answers are rejected before application. Future API/model-specific requirements may still require adapter changes even though model choices can update without a release.
+
+Images are PNG base64 (Claude `image` block, Gemini `inlineData`, OpenAI `input_image` data URL).
 
 **Prompt templates**
 
@@ -485,7 +485,8 @@ If a custom variant/icon template omits `{parentName}` but a parent exists, a `P
 | --- | --- | --- |
 | ChatGPT | `GET /v1/models` | None |
 | Gemini | `GET /v1beta/models?key=` | None |
-| Claude | `POST /v1/messages` with `max_tokens: 1` and body `"Hi"` | Minimal (Claude has no key-safe models list that works here) |
+| Claude | `GET /v1/models?limit=1` | None |
+| OpenRouter | `GET /api/v1/key` | None |
 
 Mapped errors: 401 → `Invalid API key`, 403 → `API key does not have access`, 429 → `Rate limited - try again later`, abort → `Validation timed out after 5 seconds`.
 
@@ -582,7 +583,7 @@ Developer machine setup is Node 24 + npm + Figma Desktop. All runtime configurat
 
 Configuration is the Settings modal plus the `figma-plugin` block in `package.json`.
 
-The Settings modal has two tabs. **Setup** is provider, API key (with Validate), include-image, show-variants, and overwrite-existing. **Prompts** is the component, variant, and icon textareas, each with Reset to default and the variable helper. Save and Cancel sit under the tabs on every view and write or discard both tabs in one action. The modal always opens on Setup (header gear and the no-key **Open Settings** banner); the last tab is not remembered.
+The Settings modal has two tabs. **Setup** is provider, API key (with Validate), include-image, show-variants, and overwrite-existing. **Prompts** is the component, variant, and icon textareas, each with Reset to default and the variable helper. Reset Settings at the bottom left clears the saved key and restores preferences, prompts, model choices, and icon overrides after confirmation. Component descriptions stay unchanged, and reset takes effect immediately. Save and Cancel sit under the tabs on every view and write or discard both tabs in one action. The modal always opens on Setup (header gear and the no-key **Open Settings** banner); the last tab is not remembered.
 
 ### Required to generate
 
@@ -596,14 +597,14 @@ The Settings modal has two tabs. **Setup** is provider, API key (with Validate),
 | --- | --- | --- |
 | Provider | ChatGPT | Which HTTP API and model run |
 | Include component image | off | Attach a 1× PNG to non-icon prompts |
-| Show variants in list | on | Hide `VARIANT` rows when off (sets remain) |
+| Show variants in list | on | Hide `VARIANT` rows and exclude them from generation when off (sets remain) |
 | Overwrite existing when generating all | off | Include already-described members in Generate All |
 | Component / variant / icon prompts | built-in templates | Override `{name}`, `{type}`, `{properties}`, `{parentName}`, `{icon_name}` |
 | Icon overrides | none | Per-id force on/off, persisted with settings |
 
 ### Network allowlist
 
-Figma only permits fetches to hosts listed in `package.json` → `figma-plugin.networkAccess.allowedDomains`. Adding a fourth provider requires:
+Figma only permits fetches to hosts listed in `package.json` → `figma-plugin.networkAccess.allowedDomains`. Adding another provider requires:
 
 1. A new `AIProvider` union member in `src/types.ts`
 2. `generateWith…` + `validate…` implementations
@@ -638,7 +639,7 @@ Do not fetch arbitrary URLs. Figma will block them.
 | Command | What it does |
 | --- | --- |
 | `npm install` | Install dependencies from `package-lock.json` |
-| `npm test` | Vitest once (`vitest run`) — 135 tests |
+| `npm test` | Vitest once (`vitest run`) |
 | `npm run test:watch` | Vitest watch mode |
 | `npm run build` | Typecheck, bundle, minify → `build/` + `manifest.json` |
 | `npm run watch` | Typecheck and rebuild on save (use while Figma is open) |
@@ -697,7 +698,6 @@ Tests are colocated next to the module, not under `src/**/__tests__`:
 src/services/ai.test.ts
 src/services/validation.test.ts
 src/hooks/useKeyboardShortcuts.test.ts
-src/utils/export.test.ts
 src/utils/filters.test.ts
 src/utils/generationBatches.test.ts
 src/utils/descriptionStatus.test.ts
@@ -705,19 +705,18 @@ src/utils/icon.test.ts
 src/utils/text.test.ts
 ```
 
-**135 tests / 9 files** cover:
+The unit tests cover:
 
 - Prompt selection (component vs variant vs icon, custom templates, parent fallback, variant-set context, icon skipping context)
 - Provider response parsing and HTTP error wrapping (mocked `fetch`)
 - API-key validation status mapping and 5 s abort
 - Generate All batch membership and overwrite filtering
-- CSV escaping, JSON export, dated filenames (fake timers)
 - Search / show-variants filters and missing-description counts
 - Icon name and page-name regexes
 - Description status and empty-whitespace handling
 - Shortcut modifier detection (`⌘` vs `Ctrl+`)
 
-**Not automated:** Preact components, `App.tsx` job orchestration, and `main.ts` Figma API calls. Those require Figma Desktop.
+**Not automated:** Preact rendering and full Figma integration. Unit tests with mocked APIs do not replace the Figma Desktop walkthrough.
 
 ### Writing Tests
 
@@ -760,13 +759,13 @@ After `npm run watch`:
 
 1. Import / reload the development plugin from `manifest.json`.
 2. Exercise **This page** and **Entire file**.
-3. Generate a standalone component, a set (Generate this set + Generate set and variants), and an icon-mode row.
-4. Run Generate All on at least three pending members; confirm progress and Cancel.
+3. Generate a standalone component, a set (Generate description + Generate all descriptions), and an icon-mode row.
+4. Run Fill / Replace on at least three pending members; confirm progress and Stop remaining.
 5. Turn on include-image and confirm a PNG goes out (provider still returns text).
 6. Toggle Icon, quit the plugin, reopen, confirm the override stuck.
 7. Edit a textarea, wait for autosave, Revert, try `Mod+G` / `Mod+Shift+G` / `Mod+F`.
 8. Paste a bad key and confirm a readable validation or row error.
-9. Confirm `manifest.json` still lists all three provider domains.
+9. Confirm `manifest.json` still lists all four API domains.
 10. Open Settings from the gear and from the no-key banner; both land on **Setup**. Edit a prompt, switch to Setup, Save, reopen (prompt stuck). Edit a prompt, Cancel, reopen (reverted). Validate still works. Generate still uses the saved prompts.
 
 A longer checklist lives in [`release/qa-checklist.md`](release/qa-checklist.md).
@@ -821,8 +820,8 @@ Then run the Desktop checklist in `release/qa-checklist.md`.
    - Category: Design tools
    - Support: https://github.com/panoptican/figma-description-generator/issues
 6. Upload `release/assets/icon.png` and `release/assets/thumbnail.png`.
-7. Confirm network access shows **Restricted** to OpenAI, Anthropic, and Google Generative Language — not Unknown or Unrestricted.
-8. Complete the data-security disclosure: keys are stored in Figma client storage; component names, properties, and optional PNGs are sent only to the selected provider; there is no Description Generator backend.
+7. Confirm network access shows **Restricted** to OpenAI, Anthropic, Google Generative Language, and OpenRouter — not Unknown or Unrestricted.
+8. Publish and link the reviewed [privacy policy](PRIVACY.md). Describe direct provider requests and OpenRouter routing, locally stored settings, prompt/component data, ordinary image inclusion, and icon mode’s automatic image attempt accurately in the submission disclosures. Review the current publishing form for its available security fields.
 9. Submit for review. First reviews can take days. You can push code updates while the listing is In review.
 
 **Publish an update**
@@ -924,10 +923,6 @@ With overwrite off, members that already have a description are not pending. Sea
 
 Stop remaining is not transactional. Already-applied members keep the new text. Late provider responses after abort are dropped. Revert row-by-row, or use Figma undo on the canvas.
 
-### Export downloads an empty-feeling file
-
-Export skips empty descriptions and uses the **filtered** list. Clear search and turn **Show variants** on if you expected more rows. Filename date is UTC (`toISOString().slice(0, 10)`).
-
 ### Icon badge on everything
 
 A page named `Icons` (or containing the word `icon` / `icons`) marks every component on that page as auto-icon. Toggle the Icon chip to force off; that override persists.
@@ -985,7 +980,7 @@ Specs in `specs/` are markdown work items for `./scripts/ralph-loop.sh`. The loo
 | --- | --- |
 | New menu command or Figma API | `src/main.ts` + event type in `src/types.ts` |
 | New screen or control | `src/components/` |
-| New provider | `src/services/ai.ts`, `validation.ts`, Settings dropdown, `package.json` allowlist |
+| New provider | `src/services/ai.ts`, `models.ts`, `validation.ts`, Settings dropdown, `package.json` allowlist |
 | Pure transform | `src/utils/` + colocated test |
 | Shortcut | `src/hooks/useKeyboardShortcuts.ts` |
 
@@ -994,9 +989,12 @@ Specs in `specs/` are markdown work items for `./scripts/ralph-loop.sh`. The loo
 ## Security and Privacy
 
 - **No Description Generator backend.** Keys and component data are not sent to this project’s authors.
-- **Keys** live in Figma `clientStorage` for the signed-in user. They are not in git. The Settings field is `password`. Still treat client storage as local-plaintext and rotate a key if a machine is shared.
-- **Outbound data** on generate: component name, type, properties, optional parent name, optional variant-set context, optional PNG, and the prompt template. Review your provider’s terms before sending proprietary UI.
-- **Network allowlist** is the three official API hosts only.
+- **Keys and settings** live in Figma local `clientStorage`. Keys authenticate requests to the selected provider; they are not confined to storage. Clear the API key in Settings and Save to replace the stored key with an empty value. The password input masks display; it is not a separate secure vault.
+- **OpenRouter routing** uses OpenRouter and the model host it selects. Review OpenRouter routing/account settings and both services’ data handling.
+- **Outbound data** on generate: the filled prompt can include component name, type, properties, parent name and variant-set context, plus any custom prompt text. Ordinary components include a PNG when enabled; icon mode always attempts one even when the image setting is off. Review your provider’s terms before sending proprietary UI.
+- **Validation** sends the key to the selected provider. OpenAI, Anthropic, and Gemini request a model list without generation. OpenRouter checks the authenticated key endpoint without generation.
+- **Privacy policy:** [PRIVACY.md](PRIVACY.md) explains storage, requests, controls, and third-party handling. Publish and verify a public policy URL before Community submission.
+- **Network allowlist** is the four API hosts: OpenAI, Anthropic, Google, and OpenRouter.
 - **Apply** writes only `COMPONENT` and `COMPONENT_SET` descriptions. It does not rename layers or edit other node fields.
 - **Claude** calls include `anthropic-dangerous-direct-browser-access` because the iframe is a browser context. Do not reuse that header on a server.
 
