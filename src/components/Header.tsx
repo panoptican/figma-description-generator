@@ -67,11 +67,14 @@ export function Header({
   )
 
   const RefreshIcon = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-      <path d="M21 3v5h-5" />
-      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-      <path d="M8 16H3v5" />
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.001 7.001 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.501 5.501 0 0 0 8 2.5ZM1.705 8.005a.75.75 0 0 1 .834.656 5.501 5.501 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834Z" />
     </svg>
   )
 
@@ -233,18 +236,22 @@ export function Header({
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: '12px',
-          padding: '8px 12px',
+          padding: '12px',
           borderBottom: '1px solid var(--figma-color-border)',
-          backgroundColor: 'var(--figma-color-bg-secondary)',
+          borderLeft: '3px solid var(--figma-color-border-brand, var(--figma-color-bg-brand))',
+          backgroundColor: 'var(--figma-color-bg-brand-tertiary, var(--figma-color-bg-secondary))',
           flexShrink: 0
         }}
       >
-        <span style={{ fontSize: '12px', color: 'var(--figma-color-text)' }}>
-          Add an API key in Settings before you can generate.
-        </span>
-        <Button onClick={onSettingsClick} secondary>
-          Open Settings
-        </Button>
+        <div style={{ fontSize: '12px', lineHeight: '18px', color: 'var(--figma-color-text)' }}>
+          <div style={{ fontWeight: 600 }}>Edit component descriptions in one place—no API key needed.</div>
+          <div>Add a key to generate descriptions with AI.</div>
+        </div>
+        <div style={{ flexShrink: 0 }}>
+          <Button onClick={onSettingsClick} secondary>
+            Open Settings
+          </Button>
+        </div>
       </div>
     )}
     </div>
