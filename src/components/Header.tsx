@@ -2,6 +2,8 @@ import { Button } from '@create-figma-plugin/ui'
 import { h, Ref } from 'preact'
 
 import { getShortcutLabel } from '../hooks/useKeyboardShortcuts'
+import { Usage } from '../services/ai'
+import { PaymentStatus } from '../types'
 
 interface HeaderProps {
   searchValue: string
@@ -12,13 +14,17 @@ interface HeaderProps {
   onRefreshClick: () => void
   refreshTitle: string
   scopeLabel: string
+  pageName?: string
   overwriteExisting: boolean
   isGenerating: boolean
   isRefreshing: boolean
-  hasApiKey: boolean
   progress: { current: number; total: number }
   generateCount: number
   searchInputRef?: Ref<HTMLInputElement>
+  usage: Usage | null
+  paymentStatus: PaymentStatus
+  notice?: string | null
+  onUpgrade: () => void
 }
 
 export function Header({
@@ -30,21 +36,23 @@ export function Header({
   onRefreshClick,
   refreshTitle,
   scopeLabel,
+  pageName,
   overwriteExisting,
   isGenerating,
   isRefreshing,
-  hasApiKey,
   progress,
   generateCount,
-  searchInputRef
+  searchInputRef,
+  usage,
+  paymentStatus,
+  notice,
+  onUpgrade
 }: HeaderProps) {
-  const canGenerateAll = hasApiKey && generateCount > 0
+  const canGenerateAll = generateCount > 0
   const generateLabel = overwriteExisting
     ? `Replace ${generateCount}`
     : `Fill ${generateCount}`
-  const generateTitle = !hasApiKey
-    ? 'Add an API key in Settings to start'
-    : generateCount === 0
+  const generateTitle = generateCount === 0
       ? overwriteExisting
         ? 'Nothing to replace'
         : 'Nothing to fill'
@@ -65,6 +73,20 @@ export function Header({
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .69.4 1.3 1 1.58.19.09.4.14.61.14H21a2 2 0 0 1 0 4h-.09c-.21 0-.42.05-.61.14-.6.28-1 .89-1 1.58Z" />
     </svg>
   )
+
+  const usageLabel = usage
+    ? usage.plan === 'free'
+      ? `${usage.used.toLocaleString('en-US')} / ${usage.limit.toLocaleString('en-US')} free`
+      : `${usage.used.toLocaleString('en-US')} / ${usage.limit.toLocaleString('en-US')} this month`
+    : paymentStatus === 'NOT_SUPPORTED'
+      ? 'Usage unavailable'
+      : 'Loading usage…'
+  const usageTitle = usage?.plan === 'pro' && usage.resetsAt
+    ? `Pro: ${usage.used.toLocaleString('en-US')} of ${usage.limit.toLocaleString('en-US')} descriptions used this month. Resets ${new Date(usage.resetsAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' })}.`
+    : usage?.plan === 'free'
+      ? `Free: ${usage.used.toLocaleString('en-US')} of ${usage.limit.toLocaleString('en-US')} lifetime descriptions used.`
+      : 'Usage is unavailable until Figma provides a payments token.'
+  const canUpgrade = usage?.plan === 'free'
 
   const RefreshIcon = () => (
     <svg
@@ -91,169 +113,212 @@ export function Header({
     cursor: 'pointer',
     flexShrink: 0
   }
+  const usagePillStyle = {
+    height: 24,
+    maxWidth: 170,
+    padding: '0 8px',
+    border: '1px solid var(--figma-color-border)',
+    borderRadius: '12px',
+    backgroundColor: 'var(--figma-color-bg)',
+    color: canUpgrade ? 'var(--figma-color-text)' : 'var(--figma-color-text-secondary)',
+    display: 'flex',
+    alignItems: 'center',
+    fontSize: '10px',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    flexShrink: 1,
+    cursor: canUpgrade ? 'pointer' : 'default'
+  }
+  const usagePillContent = (
+    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{usageLabel}</span>
+  )
 
   return (
-    <div>
+    <div style={{ flexShrink: 0, backgroundColor: 'var(--figma-color-bg-secondary)' }}>
       <div style={{
-        padding: '8px 12px',
+        padding: '12px 12px 8px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        minHeight: '48px',
+        boxSizing: 'border-box'
+      }}>
+        <h1
+          title={pageName === undefined ? scopeLabel : `${scopeLabel} · ${pageName}`}
+          style={{
+            margin: 0,
+            padding: 0,
+            flex: 1,
+            minWidth: 0,
+            fontSize: '12px',
+            lineHeight: '18px',
+            fontWeight: 500,
+            color: 'var(--figma-color-text)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          <span style={{ color: pageName === undefined ? undefined : 'var(--figma-color-text-secondary)' }}>
+            {scopeLabel}
+          </span>
+          {pageName !== undefined && (
+            <span style={{ fontWeight: 600 }}> · {pageName}</span>
+          )}
+        </h1>
+
+        {canUpgrade ? (
+          <button
+            type="button"
+            title={`Upgrade to Pro. ${usageTitle}`}
+            aria-label={`Upgrade to Pro. ${usageTitle}`}
+            onClick={onUpgrade}
+            style={usagePillStyle}
+          >
+            {usagePillContent}
+          </button>
+        ) : (
+          <span title={usageTitle} style={usagePillStyle}>
+            {usagePillContent}
+          </span>
+        )}
+
+        {/* Refresh component scan */}
+        <button
+          onClick={onRefreshClick}
+          disabled={isRefreshing || isGenerating}
+          aria-label={refreshTitle}
+          title={isRefreshing ? 'Refreshing components...' : refreshTitle}
+          style={{
+            ...iconButtonStyle,
+            color: isRefreshing || isGenerating
+              ? 'var(--figma-color-text-disabled)'
+              : 'var(--figma-color-text)',
+            cursor: isRefreshing || isGenerating ? 'not-allowed' : 'pointer',
+            opacity: isRefreshing || isGenerating ? 0.5 : 1
+          }}
+        >
+          <RefreshIcon />
+        </button>
+
+        <button
+          onClick={onSettingsClick}
+          aria-label="Settings"
+          title="Settings"
+          style={iconButtonStyle}
+        >
+          <SettingsIcon />
+        </button>
+      </div>
+
+      <div style={{
+        padding: '0 12px 12px',
         borderBottom: '1px solid var(--figma-color-border)',
         display: 'flex',
         alignItems: 'center',
         gap: '8px',
-        height: '48px',
         boxSizing: 'border-box'
       }}>
-      <span
-        title={scopeLabel}
-        style={{
-          fontSize: '11px',
-          color: 'var(--figma-color-text-secondary)',
-          flexShrink: 0,
-          maxWidth: 160,
+        <div
+          style={{
+            flex: 1,
+            border: '1px solid var(--figma-color-border)',
+            borderRadius: '6px',
+            backgroundColor: 'var(--figma-color-bg)',
+            position: 'relative',
+            minWidth: 0
+          }}
+        >
+          <input
+            ref={searchInputRef}
+            type="text"
+            aria-label="Search components"
+            placeholder={`Search components... (${getShortcutLabel('F')})`}
+            value={searchValue}
+            onInput={(e) => onSearchChange((e.target as HTMLInputElement).value)}
+            style={{
+              width: '100%',
+              height: '32px',
+              padding: '0 12px 0 32px',
+              border: 'none',
+              borderRadius: '6px',
+              backgroundColor: 'transparent',
+              color: 'var(--figma-color-text)',
+              fontSize: '12px',
+              outline: 'none',
+              boxSizing: 'border-box'
+            }}
+          />
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--figma-color-text-secondary)"
+            stroke-width="2"
+            style={{
+              position: 'absolute',
+              left: '10px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              pointerEvents: 'none'
+            }}
+          >
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </div>
+
+        {isGenerating ? (
+          <Button
+            onClick={onCancelClick}
+            danger
+            title="Already-written descriptions stay."
+            style={{ flexShrink: 0 }}
+          >
+            Stop remaining ({progress.current}/{progress.total})
+          </Button>
+        ) : (
+          <button
+            onClick={onGenerateAllClick}
+            disabled={!canGenerateAll}
+            title={generateTitle}
+            style={{
+              height: 32,
+              padding: '0 12px',
+              borderRadius: '6px',
+              border: 'none',
+              backgroundColor: 'var(--figma-color-bg-brand)',
+              color: 'var(--figma-color-text-onbrand)',
+              fontSize: '12px',
+              fontWeight: 500,
+              cursor: canGenerateAll ? 'pointer' : 'not-allowed',
+              opacity: canGenerateAll ? 1 : 0.5,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              flexShrink: 0,
+              whiteSpace: 'nowrap'
+            }}
+          >
+            <SparkleIcon /> {generateLabel}
+          </button>
+        )}
+      </div>
+
+      {notice && (
+        <div role="alert" title={notice} style={{
+          padding: '6px 12px 0',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap'
-        }}
-      >
-        {scopeLabel}
-      </span>
-      <div
-        style={{
-          flex: 1,
-          border: '1px solid var(--figma-color-border)',
-          borderRadius: '6px',
-          backgroundColor: 'var(--figma-color-bg)',
-          position: 'relative',
-          minWidth: 0
-        }}
-      >
-        <input
-          ref={searchInputRef}
-          type="text"
-          placeholder={`Search components... (${getShortcutLabel('F')})`}
-          value={searchValue}
-          onInput={(e) => onSearchChange((e.target as HTMLInputElement).value)}
-          style={{
-            width: '100%',
-            height: '32px',
-            padding: '0 12px 0 32px',
-            border: 'none',
-            borderRadius: '6px',
-            backgroundColor: 'transparent',
-            color: 'var(--figma-color-text)',
-            fontSize: '12px',
-            outline: 'none',
-            boxSizing: 'border-box'
-          }}
-        />
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="var(--figma-color-text-secondary)"
-          stroke-width="2"
-          style={{
-            position: 'absolute',
-            left: '10px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            pointerEvents: 'none'
-          }}
-        >
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-      </div>
-
-      {isGenerating ? (
-        <Button
-          onClick={onCancelClick}
-          danger
-          title="Already-written descriptions stay."
-          style={{ flexShrink: 0 }}
-        >
-          Stop remaining ({progress.current}/{progress.total})
-        </Button>
-      ) : (
-        <button
-          onClick={onGenerateAllClick}
-          disabled={!canGenerateAll}
-          title={generateTitle}
-          style={{
-            height: 32,
-            padding: '0 12px',
-            borderRadius: '6px',
-            border: 'none',
-            backgroundColor: 'var(--figma-color-bg-brand)',
-            color: 'var(--figma-color-text-onbrand)',
-            fontSize: '12px',
-            fontWeight: 500,
-            cursor: canGenerateAll ? 'pointer' : 'not-allowed',
-            opacity: canGenerateAll ? 1 : 0.5,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            flexShrink: 0,
-            whiteSpace: 'nowrap'
-          }}
-        >
-          <SparkleIcon /> {generateLabel}
-        </button>
+          whiteSpace: 'nowrap',
+          color: 'var(--figma-color-text-danger)',
+          fontSize: '10px'
+        }}>
+          {notice}
+        </div>
       )}
-
-      {/* Refresh component scan */}
-      <button
-        onClick={onRefreshClick}
-        disabled={isRefreshing || isGenerating}
-        aria-label={refreshTitle}
-        title={isRefreshing ? 'Refreshing components...' : refreshTitle}
-        style={{
-          ...iconButtonStyle,
-          color: isRefreshing || isGenerating
-            ? 'var(--figma-color-text-disabled)'
-            : 'var(--figma-color-text)',
-          cursor: isRefreshing || isGenerating ? 'not-allowed' : 'pointer',
-          opacity: isRefreshing || isGenerating ? 0.5 : 1
-        }}
-      >
-        <RefreshIcon />
-      </button>
-
-      <button
-        onClick={onSettingsClick}
-        aria-label="Settings"
-        title="Settings"
-        style={iconButtonStyle}
-      >
-        <SettingsIcon />
-      </button>
-    </div>
-    {!hasApiKey && (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '12px',
-          padding: '12px',
-          borderBottom: '1px solid var(--figma-color-border)',
-          borderLeft: '3px solid var(--figma-color-border-brand, var(--figma-color-bg-brand))',
-          backgroundColor: 'var(--figma-color-bg-brand-tertiary, var(--figma-color-bg-secondary))',
-          flexShrink: 0
-        }}
-      >
-        <div style={{ fontSize: '12px', lineHeight: '18px', color: 'var(--figma-color-text)' }}>
-          <div style={{ fontWeight: 600 }}>Edit component descriptions in one place—no API key needed.</div>
-          <div>Add a key to generate descriptions with AI.</div>
-        </div>
-        <div style={{ flexShrink: 0 }}>
-          <Button onClick={onSettingsClick} secondary>
-            Open Settings
-          </Button>
-        </div>
-      </div>
-    )}
     </div>
   )
 }

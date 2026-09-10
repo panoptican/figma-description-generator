@@ -1,0 +1,23 @@
+declare const styles: {
+  readonly "componentGroup": string;
+  readonly "componentList": string;
+  readonly "componentPageRows": string;
+  readonly "componentRow": string;
+  readonly "componentRowCollapsed": string;
+  readonly "componentSetContext": string;
+  readonly "componentVariant": string;
+  readonly "componentVariantRows": string;
+  readonly "componentVariants": string;
+  readonly "componentVariantsLabel": string;
+  readonly "descriptionInput": string;
+  readonly "joinedGenerate": string;
+  readonly "joinedGenerateButton": string;
+  readonly "pageGenerateButton": string;
+  readonly "rowActions": string;
+  readonly "rowFeedback": string;
+  readonly "rowHeader": string;
+  readonly "rowHeaderButton": string;
+  readonly "rowIconButton": string;
+  readonly "rowSetLabel": string;
+};
+export = styles;

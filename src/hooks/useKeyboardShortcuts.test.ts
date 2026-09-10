@@ -116,8 +116,7 @@ describe('shortcuts with Settings open', () => {
       removeEventListener: vi.fn(),
     })
     const handlers = {
-      onGenerateSingle: vi.fn(), onGenerateAll: vi.fn(), onFocusSearch: vi.fn(),
-      onCloseModal: vi.fn(), onRevert: vi.fn(),
+      onGenerateAll: vi.fn(), onFocusSearch: vi.fn(), onCloseModal: vi.fn(),
     }
     const input = { focus: vi.fn(), select: vi.fn() }
     useKeyboardShortcuts(handlers, { current: input as unknown as HTMLInputElement }, true, isModalOpen)
@@ -156,10 +155,16 @@ describe('shortcuts with Settings open', () => {
     press('g', true)
     press('f')
     press('z')
-    expect(handlers.onGenerateSingle).toHaveBeenCalledOnce()
     expect(handlers.onGenerateAll).toHaveBeenCalledOnce()
     expect(handlers.onFocusSearch).toHaveBeenCalledOnce()
-    expect(handlers.onRevert).toHaveBeenCalledOnce()
     expect(input.focus).toHaveBeenCalledOnce()
+  })
+
+  it('does not target any row when focus is outside the list', () => {
+    const { handlers, press } = setup(false)
+    for (const key of ['g', 'z', 'Escape']) {
+      expect(press(key).preventDefault).not.toHaveBeenCalled()
+    }
+    Object.values(handlers).forEach(handler => expect(handler).not.toHaveBeenCalled())
   })
 })

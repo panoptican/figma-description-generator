@@ -1,5 +1,4 @@
-const ICON_NAME_PATTERN = /^icon\b/i
-const ICON_PAGE_PATTERN = /\bicons?\b/i
+const ICON_PATTERN = /\bicons?\b/i
 
 /**
  * Identifies components that should use the icon-specific description prompt.
@@ -7,5 +6,10 @@ const ICON_PAGE_PATTERN = /\bicons?\b/i
  * for their components instead of putting "icon" in every component name.
  */
 export function isIconComponent(componentName: string, pageName: string): boolean {
-  return ICON_NAME_PATTERN.test(componentName) || ICON_PAGE_PATTERN.test(pageName)
+  return ICON_PATTERN.test(componentName) || ICON_PATTERN.test(pageName)
+}
+
+export function isIconModeEnabled(autoDetected: boolean | undefined, override: boolean | undefined): boolean {
+  // Older manual-on overrides cannot enable icon mode without the naming rule.
+  return autoDetected === true && override !== false
 }

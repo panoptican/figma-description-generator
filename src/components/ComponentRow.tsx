@@ -3,12 +3,16 @@ import { h } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 
 import { ComponentData } from '../types'
+import { QuotaExceededError, Usage } from '../services/ai'
 import { getDescriptionStatus } from '../utils/descriptionStatus'
+import { handleRowKeyboardShortcut } from '../hooks/useKeyboardShortcuts'
+import styles from '../ui.css'
 
 interface ComponentRowProps {
   component: ComponentData
   showVariants: boolean
   isModalOpen?: boolean
+  isHidden?: boolean
   onGenerate: (component: ComponentData) => Promise<string>
   onGenerateComponentSet: (component: ComponentData) => Promise<void>
   onGenerated: (id: string) => void
@@ -16,19 +20,15 @@ interface ComponentRowProps {
   onReject: (id: string) => void
   onRevert: (id: string) => void
   onSelect: (id: string) => void
-  isSelected: boolean
-  onRowSelect: (id: string) => void
   isGenerating: boolean
-  hasApiKey: boolean
-  providerLabel: string
   externalError?: string
   isExpanded: boolean
   onToggleExpand: (id: string) => void
   isIcon: boolean
-  onToggleIcon: (id: string) => void
+  onDisableIcon: (id: string) => void
   wasGeneratedThisSession: boolean
-  onOpenParent: (id: string) => void
-  onRowRef: (id: string, element: HTMLDivElement | null) => void
+  onUpgrade: () => void
+  errorResetVersion: number
 }
 
 function truncateDescription(text: string | undefined, maxLength: number = 60): string {
@@ -40,32 +40,30 @@ function truncateDescription(text: string | undefined, maxLength: number = 60): 
 export function ComponentRow({
   component,
   isModalOpen = false,
+  isHidden = false,
   showVariants,
   onGenerate,
   onGenerateComponentSet,
+  onGenerated,
   onConfirm,
   onReject,
   onRevert,
   onSelect,
-  isSelected,
-  onRowSelect,
   isGenerating,
-  hasApiKey,
-  providerLabel,
   externalError,
   isExpanded,
   onToggleExpand,
   isIcon,
-  onToggleIcon,
-  onGenerated,
+  onDisableIcon,
   wasGeneratedThisSession,
-  onOpenParent,
-  onRowRef
+  onUpgrade,
+  errorResetVersion
 }: ComponentRowProps) {
   const [description, setDescription] = useState(component.currentDescription)
   const [loading, setLoading] = useState(false)
   const [groupLoading, setGroupLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [quotaUsage, setQuotaUsage] = useState<Usage | null>(null)
   const [isDirty, setIsDirty] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const descriptionRef = useRef(description)
@@ -73,6 +71,8 @@ export function ComponentRow({
   const currentDescriptionRef = useRef(component.currentDescription)
   const onConfirmRef = useRef(onConfirm)
   const componentIdRef = useRef(component.id)
+  const rowElementRef = useRef<HTMLDivElement | null>(null)
+  const toggleFocusFrameRef = useRef<number | null>(null)
 
   descriptionRef.current = description
   isDirtyRef.current = isDirty
@@ -85,6 +85,11 @@ export function ComponentRow({
     setIsDirty(false)
     setIsSaving(false)
   }, [component.currentDescription])
+
+  useEffect(() => {
+    setError(null)
+    setQuotaUsage(null)
+  }, [errorResetVersion])
 
   useEffect(() => {
     if (!isDirty || description === component.currentDescription) {
@@ -117,67 +122,30 @@ export function ComponentRow({
     }
   }, [])
 
-  // Handle Escape key to collapse
-  useEffect(() => {
-    if (!isExpanded || isModalOpen) return
-
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        onToggleExpand(component.id)
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isExpanded, isModalOpen, component.id, onToggleExpand])
+  useEffect(() => () => {
+    if (toggleFocusFrameRef.current !== null) cancelAnimationFrame(toggleFocusFrameRef.current)
+  }, [])
 
   const descriptionStatus = getDescriptionStatus(component.currentDescription, wasGeneratedThisSession)
   const isEmpty = descriptionStatus === 'missing'
-  const statusColor = descriptionStatus === 'generated'
-    ? '#f59e0b'
-    : descriptionStatus === 'existing'
-      ? '#22c55e'
-      : 'transparent'
-  const collapsedBackgroundColor = isSelected
-    ? 'rgba(24, 160, 251, 0.12)'
-    : descriptionStatus === 'generated'
-      ? 'rgba(245, 158, 11, 0.08)'
-      : descriptionStatus === 'existing'
-        ? 'rgba(34, 197, 94, 0.06)'
-        : 'transparent'
-  const collapsedHoverBackgroundColor = isSelected
-    ? 'rgba(24, 160, 251, 0.18)'
-    : descriptionStatus === 'generated'
-      ? 'rgba(245, 158, 11, 0.14)'
-      : descriptionStatus === 'existing'
-        ? 'rgba(34, 197, 94, 0.1)'
-        : 'var(--figma-color-bg-hover)'
-  const expandedBackgroundColor = isSelected
-    ? 'rgba(24, 160, 251, 0.1)'
-    : descriptionStatus === 'generated'
-      ? 'rgba(245, 158, 11, 0.08)'
-      : descriptionStatus === 'existing'
-        ? 'rgba(34, 197, 94, 0.06)'
-        : 'var(--figma-color-bg-secondary)'
-  const sourceLabel = isIcon ? 'Icon prompt' : component.type === 'VARIANT' ? 'Variant set prompt' : 'Default prompt'
-  const statusLabel =
-    error || externalError
-      ? 'Error'
-      : loading || groupLoading || isGenerating
-        ? 'Generating...'
-        : isSaving
-          ? 'Saving...'
-          : isDirty
-            ? 'Unsaved changes'
-            : descriptionStatus === 'generated'
-              ? 'Generated this session'
-              : isEmpty
-                ? 'Missing description'
-                : 'Has description'
+  const descriptionStatusLabel = descriptionStatus === 'generated'
+    ? 'Generated this session'
+    : 'Has description'
+  const feedbackLabel = error || externalError
+    ? null
+    : loading || groupLoading
+      ? 'Generating...'
+      : isSaving
+        ? 'Saving...'
+        : isDirty
+          ? 'Unsaved changes'
+          : null
+  const relationshipLabel = component.type === 'COMPONENT_SET' ? 'Component set' : ''
 
   async function handleGenerate() {
     setLoading(true)
     setError(null)
+    setQuotaUsage(null)
     try {
       const newDescription = await onGenerate(component)
       setDescription(newDescription)
@@ -185,6 +153,7 @@ export function ComponentRow({
       onConfirm(component.id, newDescription)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate')
+      setQuotaUsage(err instanceof QuotaExceededError ? err.usage : null)
     } finally {
       setLoading(false)
     }
@@ -193,6 +162,7 @@ export function ComponentRow({
   async function handleGenerateComponentSet() {
     setGroupLoading(true)
     setError(null)
+    setQuotaUsage(null)
     try {
       await onGenerateComponentSet(component)
     } catch (err) {
@@ -202,124 +172,87 @@ export function ComponentRow({
     }
   }
 
-  function handleNameClick(e: MouseEvent) {
+  function handleTitleActivation(e: MouseEvent) {
     e.stopPropagation()
-    onRowSelect(component.id)
     onSelect(component.id)
+    handleRowClick()
   }
 
   function handleRowClick() {
     onToggleExpand(component.id)
+    if (toggleFocusFrameRef.current !== null) cancelAnimationFrame(toggleFocusFrameRef.current)
+    toggleFocusFrameRef.current = requestAnimationFrame(() => {
+      rowElementRef.current?.querySelector<HTMLButtonElement>('[data-row-toggle]')?.focus({ preventScroll: true })
+      toggleFocusFrameRef.current = null
+    })
   }
 
-  // Build properties string for expanded view
-  const propertiesStr = component.properties.length > 0 ? component.properties.join(', ') : ''
-  const relationshipLabel =
-    component.type === 'COMPONENT_SET'
-      ? 'Component set'
-      : component.type === 'VARIANT'
-        ? `Variant of ${component.parentName || 'component set'}`
-        : 'Component'
-  const typeAndProps = propertiesStr ? `${relationshipLabel} · ${propertiesStr}` : relationshipLabel
+  function handleKeyDown(event: KeyboardEvent) {
+    if (isHidden || isModalOpen) return
 
-  // Collapsed state - single line
+    handleRowKeyboardShortcut(event, {
+      onGenerate: () => {
+        if (!loading && !groupLoading && !isGenerating) void handleGenerate()
+      },
+      onRevert: () => {
+        if (component.previousDescription !== undefined) onRevert(component.id)
+      },
+      onCollapse: isExpanded ? handleRowClick : undefined,
+    })
+  }
+
+  function renderIconButton() {
+    if (!isIcon) return null
+
+    return (
+      <button
+        type="button"
+        className={styles.rowIconButton}
+        aria-label={`Turn off icon mode for ${component.name}`}
+        title={`Turn off icon mode for ${component.name}`}
+        onClick={(e) => {
+          e.stopPropagation()
+          rowElementRef.current?.querySelector<HTMLButtonElement>('[data-row-toggle]')?.focus({ preventScroll: true })
+          onDisableIcon(component.id)
+        }}
+      >
+        Icon
+      </button>
+    )
+  }
+
   if (!isExpanded) {
     return (
       <div
+        className={`${styles.componentRow} ${styles.componentRowCollapsed}`}
         ref={(element) => {
-          onRowRef(component.id, element)
+          rowElementRef.current = element
         }}
         onClick={handleRowClick}
+        onKeyDown={handleKeyDown}
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
-          padding: component.type === 'VARIANT' ? '8px 16px 8px 32px' : '8px 16px',
-          height: '36px',
+          height: '40px',
           boxSizing: 'border-box',
-          borderBottom: '1px solid var(--figma-color-border)',
           cursor: 'pointer',
-          backgroundColor: collapsedBackgroundColor,
-          transition: 'background-color 0.15s'
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLElement).style.backgroundColor = collapsedHoverBackgroundColor
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLElement).style.backgroundColor = collapsedBackgroundColor
+          transition: 'background-color 0.15s',
+          position: 'relative'
         }}
       >
-        {/* Status dot */}
-        {!isEmpty && (
-          <span
-            style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              backgroundColor: statusColor,
-              flexShrink: 0
-            }}
-          />
-        )}
-
-        {/* Component name */}
-        <span
-          onClick={handleNameClick}
-          style={{
-            color: 'var(--figma-color-text)',
-            fontSize: '12px',
-            fontWeight: 500,
-            flexShrink: 0,
-            maxWidth: '200px',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap'
-          }}
-          title={component.name}
+        <button
+          type="button"
+          data-row-toggle
+          className={styles.rowHeaderButton}
+          aria-label={`Expand ${component.name}`}
+          aria-expanded={false}
+          onClick={handleTitleActivation}
         >
-          {component.name}
-        </span>
+          <span title={component.name}>{component.name}</span>
+          {relationshipLabel && <span className={styles.rowSetLabel}>{relationshipLabel}</span>}
+        </button>
 
-        {/* Component hierarchy */}
-        <span
-          title={component.type === 'VARIANT' ? relationshipLabel : undefined}
-          style={{
-            maxWidth: '190px',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            fontSize: '10px',
-            padding: '1px 5px',
-            borderRadius: '3px',
-            backgroundColor: component.type === 'VARIANT'
-              ? 'var(--figma-color-bg-secondary)'
-              : 'transparent',
-            color: 'var(--figma-color-text-tertiary)',
-            flexShrink: 0
-          }}
-        >
-          {relationshipLabel}
-        </span>
-
-        {/* Icon badge */}
-        {isIcon && (
-          <span
-            title="Icon component — uses icon prompt"
-            style={{
-              fontSize: '10px',
-              padding: '1px 5px',
-              borderRadius: '3px',
-              backgroundColor: 'var(--figma-color-bg-tertiary)',
-              color: 'var(--figma-color-text-secondary)',
-              flexShrink: 0,
-              lineHeight: '14px'
-            }}
-          >
-            Icon
-          </span>
-        )}
-
-        {/* Description preview or empty indicator */}
         <span
           style={{
             flex: 1,
@@ -335,100 +268,48 @@ export function ComponentRow({
           {isEmpty ? 'No description' : truncateDescription(component.currentDescription)}
         </span>
 
-        {/* Expand indicator */}
         <span
-          style={{
-            color: 'var(--figma-color-text-tertiary)',
-            fontSize: '12px',
-            flexShrink: 0
-          }}
+          role={isEmpty ? undefined : 'img'}
+          aria-label={isEmpty ? undefined : descriptionStatusLabel}
+          aria-hidden={isEmpty ? true : undefined}
+          title={isEmpty ? undefined : descriptionStatusLabel}
+          style={{ width: '12px', color: 'var(--figma-color-text-secondary)', flexShrink: 0 }}
         >
-          ›
+          {isEmpty ? '' : '✓'}
         </span>
+
+        {isIcon && <div className={styles.rowActions}>{renderIconButton()}</div>}
       </div>
     )
   }
 
-  // Expanded state - full details
   return (
     <div
+      className={styles.componentRow}
       ref={(element) => {
-        onRowRef(component.id, element)
+        rowElementRef.current = element
       }}
-      style={{
-        padding: component.type === 'VARIANT' ? '12px 16px 12px 32px' : '12px 16px',
-        borderBottom: '1px solid var(--figma-color-border)',
-        backgroundColor: expandedBackgroundColor
-      }}
+      onKeyDown={handleKeyDown}
+      style={{ position: 'relative' }}
     >
-      {/* Header row - name and collapse indicator */}
-      <div
-        onClick={handleRowClick}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          cursor: 'pointer',
-          marginBottom: '4px'
-        }}
-      >
-        <span
-          onClick={handleNameClick}
-          style={{
-            color: 'var(--figma-color-text)',
-            fontSize: '13px',
-            fontWeight: 600
-          }}
-          title="Click to select in canvas"
-        >
-          {component.name}
-        </span>
-        <span
-          style={{
-            color: 'var(--figma-color-text-tertiary)',
-            fontSize: '12px',
-            transform: 'rotate(90deg)'
-          }}
-        >
-          ›
-        </span>
-      </div>
-
-      {/* Type, properties, and icon toggle */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          marginBottom: '8px'
-        }}
-      >
-        <span style={{ color: 'var(--figma-color-text-secondary)', fontSize: '11px' }}>
-          {typeAndProps}
-        </span>
+      <div className={styles.rowHeader}>
         <button
-          onClick={(e) => {
-            e.stopPropagation()
-            onToggleIcon(component.id)
-          }}
-          title={isIcon ? 'Using icon prompt (click to disable)' : 'Click to use icon prompt'}
-          style={{
-            padding: '1px 6px',
-            borderRadius: '3px',
-            border: isIcon ? 'none' : '1px dashed var(--figma-color-border)',
-            backgroundColor: isIcon ? 'var(--figma-color-bg-brand)' : 'transparent',
-            color: isIcon ? 'var(--figma-color-text-onbrand)' : 'var(--figma-color-text-tertiary)',
-            fontSize: '10px',
-            cursor: 'pointer',
-            lineHeight: '14px'
-          }}
+          type="button"
+          data-row-toggle
+          className={styles.rowHeaderButton}
+          aria-label={`Collapse ${component.name}`}
+          aria-expanded={true}
+          onClick={handleTitleActivation}
         >
-          Icon
+          <span title="Click to select in canvas">{component.name}</span>
+          {relationshipLabel && <span className={styles.rowSetLabel}>{relationshipLabel}</span>}
         </button>
+        {isIcon && <div className={styles.rowActions}>{renderIconButton()}</div>}
       </div>
 
-      {/* Textarea - 2 lines default */}
       <textarea
+        className={styles.descriptionInput}
+        aria-label={`${component.name} description`}
         value={description}
         onInput={(e) => {
           setDescription((e.target as HTMLTextAreaElement).value)
@@ -437,17 +318,13 @@ export function ComponentRow({
         }}
         onClick={(e) => {
           e.stopPropagation()
-          onRowSelect(component.id)
         }}
         rows={2}
         placeholder="Enter description..."
         style={{
           width: '100%',
           padding: '8px',
-          border: '1px solid var(--figma-color-border)',
-          borderRadius: '4px',
-          backgroundColor: 'var(--figma-color-bg)',
-          color: 'var(--figma-color-text)',
+          marginTop: '8px',
           fontFamily: 'Inter, sans-serif',
           fontSize: '12px',
           lineHeight: '16px',
@@ -456,91 +333,81 @@ export function ComponentRow({
         }}
       />
 
-      {/* Error display */}
       {(error || externalError) && (
         <div style={{ color: 'var(--figma-color-text-danger)', marginTop: '4px', fontSize: '11px' }}>
-          {error || externalError}
+          <div>{error || externalError}</div>
+          {quotaUsage?.plan === 'free' && (
+            <Button
+              secondary
+              onClick={(e: MouseEvent) => {
+                e.stopPropagation()
+                onUpgrade()
+              }}
+              style={{ marginTop: '6px' }}
+            >
+              Upgrade to Pro
+            </Button>
+          )}
         </div>
       )}
 
-      {/* Status and action buttons */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: '8px',
-          marginTop: '8px'
-        }}
-      >
-        <span
+      {feedbackLabel && (
+        <div className={styles.rowFeedback} aria-live="polite">
+          {feedbackLabel}
+        </div>
+      )}
+
+      {(component.type !== 'VARIANT' || component.previousDescription !== undefined) && (
+        <div
           style={{
-            color: 'var(--figma-color-text-tertiary)',
-            fontSize: '11px',
-            lineHeight: '14px',
-            flex: 1,
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap'
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'flex-end',
+            alignItems: 'center',
+            gap: '8px',
+            marginTop: '8px'
           }}
-          title={`Source: ${sourceLabel} · Provider: ${providerLabel} · Status: ${statusLabel}`}
         >
-          {`Source: ${sourceLabel} · Provider: ${providerLabel} · Status: ${statusLabel}`}
-        </span>
-        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-          {component.type !== 'VARIANT' && (
+          {component.type === 'COMPONENT_SET' && showVariants && component.variantContext && component.variantContext.length > 0 ? (
+            <div className={styles.joinedGenerate} role="group" aria-label={`${component.name} generation actions`}>
+              <Button
+                className={styles.joinedGenerateButton}
+                onClick={(e: MouseEvent) => {
+                  e.stopPropagation()
+                  handleGenerate()
+                }}
+                disabled={loading || groupLoading || isGenerating}
+                loading={loading}
+                aria-label={`Generate a description for ${component.name} only`}
+                title="Generate a description for this component set only. Replaces its existing description."
+              >
+                Generate one
+              </Button>
+              <Button
+                className={styles.joinedGenerateButton}
+                onClick={(e: MouseEvent) => {
+                  e.stopPropagation()
+                  handleGenerateComponentSet()
+                }}
+                disabled={groupLoading || loading || isGenerating}
+                loading={groupLoading}
+                aria-label={`Generate descriptions for ${component.name} and all variants`}
+                title="Generate descriptions for this component set and all variants. Replaces existing descriptions."
+              >
+                Set + variants
+              </Button>
+            </div>
+          ) : component.type !== 'VARIANT' && (
             <Button
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()
                 handleGenerate()
               }}
-              disabled={loading || groupLoading || isGenerating || !hasApiKey}
+              disabled={loading || groupLoading || isGenerating}
               loading={loading}
             >
               Generate description
             </Button>
-          )}
-
-          {showVariants && component.type === 'COMPONENT_SET' && component.variantContext && component.variantContext.length > 0 && (
-            <Button
-              onClick={(e: MouseEvent) => {
-                e.stopPropagation()
-                handleGenerateComponentSet()
-              }}
-              disabled={groupLoading || loading || isGenerating || !hasApiKey}
-              loading={groupLoading}
-              title="Generates a description for this component set and each of its variants."
-              secondary
-            >
-              Generate all descriptions
-            </Button>
-          )}
-
-          {component.type === 'VARIANT' && (
-            <button
-              type="button"
-              onClick={(e: MouseEvent) => {
-                e.stopPropagation()
-                if (component.parentId) {
-                  onOpenParent(component.parentId)
-                }
-              }}
-              style={{
-                color: 'var(--figma-color-text-brand)',
-                fontSize: '11px',
-                alignSelf: 'center',
-                padding: 0,
-                border: 'none',
-                backgroundColor: 'transparent',
-                cursor: component.parentId ? 'pointer' : 'default',
-                textDecoration: component.parentId ? 'underline' : 'none'
-              }}
-              disabled={!component.parentId}
-              title={component.parentId ? 'Open parent component' : undefined}
-            >
-              Open “{component.parentName || 'component set'}”
-            </button>
           )}
 
           {component.previousDescription !== undefined && (
@@ -555,7 +422,7 @@ export function ComponentRow({
             </Button>
           )}
         </div>
-      </div>
+      )}
     </div>
   )
 }

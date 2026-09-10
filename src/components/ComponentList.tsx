@@ -1,13 +1,25 @@
 import { Muted, Text } from '@create-figma-plugin/ui'
 import { h } from 'preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useState } from 'preact/hooks'
 
 import { ComponentData, Scope } from '../types'
+import { groupComponentRows } from '../utils/componentGroups'
+import { isIconModeEnabled } from '../utils/icon'
+import styles from '../ui.css'
 import { isDescriptionEmpty } from '../utils/text'
 import { ComponentRow } from './ComponentRow'
 
 interface ComponentListProps {
   components: ComponentData[]
+  pageGeneration?: {
+    counts: Map<string, number>
+    activePageId: string | null
+    progress: { current: number; total: number }
+    overwriteExisting: boolean
+    isRefreshing: boolean
+    onGenerate: (pageId: string) => Promise<void>
+    onCancel: () => void
+  }
   searchValue: string
   scope: Scope
   showVariants: boolean
@@ -18,20 +30,19 @@ interface ComponentListProps {
   onConfirm: (id: string, description: string) => void
   onReject: (id: string) => void
   onRevert: (id: string) => void
-  selectedRowId: string | null
-  onRowSelect: (id: string) => void
   isGenerating: boolean
-  hasApiKey: boolean
-  providerLabel: string
   rowErrors: Record<string, string | undefined>
   onSelect: (id: string) => void
   iconOverrides: Record<string, boolean>
-  onToggleIcon: (id: string) => void
+  onDisableIcon: (id: string) => void
   generatedThisSession: Set<string>
+  onUpgrade: () => void
+  errorResetVersion: number
 }
 
 export function ComponentList({
   components,
+  pageGeneration,
   searchValue,
   scope,
   isModalOpen = false,
@@ -42,38 +53,18 @@ export function ComponentList({
   onConfirm,
   onReject,
   onRevert,
-  selectedRowId,
-  onRowSelect,
   isGenerating,
-  hasApiKey,
-  providerLabel,
   rowErrors,
   onSelect,
   iconOverrides,
-  onToggleIcon,
-  generatedThisSession
+  onDisableIcon,
+  generatedThisSession,
+  onUpgrade,
+  errorResetVersion
 }: ComponentListProps) {
   const [collapsedPages, setCollapsedPages] = useState<Set<string>>(new Set())
+  const [collapsedVariantGroups, setCollapsedVariantGroups] = useState<Set<string>>(new Set())
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
-  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map())
-  const [pendingScrollId, setPendingScrollId] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (pendingScrollId === null) {
-      return
-    }
-
-    const frame = requestAnimationFrame(() => {
-      rowRefs.current.get(pendingScrollId)?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center'
-      })
-      setPendingScrollId(null)
-    })
-
-    return () => cancelAnimationFrame(frame)
-  }, [pendingScrollId])
-
   if (components.length === 0) {
     const emptyMessage = searchValue
       ? `No matches for “${searchValue}”.`
@@ -91,7 +82,6 @@ export function ComponentList({
   }
 
   function handleToggleExpand(id: string) {
-    onRowSelect(id)
     setExpandedRows((prev) => {
       const next = new Set(prev)
       if (next.has(id)) {
@@ -103,43 +93,12 @@ export function ComponentList({
     })
   }
 
-  function handleRowRef(id: string, element: HTMLDivElement | null) {
-    if (element) {
-      rowRefs.current.set(id, element)
-    } else {
-      rowRefs.current.delete(id)
-    }
-  }
-
-  function handleOpenParent(parentId: string) {
-    const parent = components.find((component) => component.id === parentId)
-    if (!parent) {
-      return
-    }
-
-    onRowSelect(parentId)
-    setCollapsedPages((prev) => {
-      if (!prev.has(parent.pageName)) {
-        return prev
-      }
-
-      const next = new Set(prev)
-      next.delete(parent.pageName)
-      return next
-    })
-    setExpandedRows((prev) => {
-      if (prev.has(parentId)) {
-        return prev
-      }
-
-      const next = new Set(prev)
-      next.add(parentId)
-      return next
-    })
-    setPendingScrollId(parentId)
-  }
-
   function handleExpandAllInPage(pageComponents: ComponentData[]) {
+    setCollapsedVariantGroups((prev) => {
+      const next = new Set(prev)
+      groupComponentRows(pageComponents).forEach(group => next.delete(group.id))
+      return next
+    })
     setExpandedRows((prev) => {
       const next = new Set(prev)
       pageComponents.forEach(c => next.add(c.id))
@@ -148,6 +107,13 @@ export function ComponentList({
   }
 
   function handleCollapseAllInPage(pageComponents: ComponentData[]) {
+    setCollapsedVariantGroups((prev) => {
+      const next = new Set(prev)
+      groupComponentRows(pageComponents).forEach(group => {
+        if (group.variants.length > 0) next.add(group.id)
+      })
+      return next
+    })
     setExpandedRows((prev) => {
       const next = new Set(prev)
       pageComponents.forEach(c => next.delete(c.id))
@@ -157,26 +123,65 @@ export function ComponentList({
 
   // Group components by page
   const componentsByPage = components.reduce((acc, component) => {
-    if (!acc[component.pageName]) {
-      acc[component.pageName] = []
+    if (!acc[component.pageId]) {
+      acc[component.pageId] = []
     }
-    acc[component.pageName].push(component)
+    acc[component.pageId].push(component)
     return acc
   }, {} as Record<string, ComponentData[]>)
 
+  function renderRow(component: ComponentData, isHidden = false) {
+    return (
+      <ComponentRow
+        key={component.id}
+        component={component}
+        showVariants={showVariants}
+        isModalOpen={isModalOpen}
+        isHidden={isHidden}
+        onGenerate={onGenerate}
+        onGenerateComponentSet={onGenerateComponentSet}
+        onGenerated={onGenerated}
+        onConfirm={onConfirm}
+        onReject={onReject}
+        onRevert={onRevert}
+        onSelect={onSelect}
+        isGenerating={isGenerating}
+        externalError={rowErrors[component.id]}
+        isExpanded={expandedRows.has(component.id)}
+        onToggleExpand={handleToggleExpand}
+        isIcon={isIconModeEnabled(component.isIcon, iconOverrides[component.id])}
+        onDisableIcon={onDisableIcon}
+        wasGeneratedThisSession={generatedThisSession.has(component.id)}
+        onUpgrade={onUpgrade}
+        errorResetVersion={errorResetVersion}
+      />
+    )
+  }
+
   return (
-    <div style={{ flex: 1, overflow: 'auto', position: 'relative', zIndex: 0 }}>
-      {Object.entries(componentsByPage).map(([pageName, pageComponents]) => {
-        const isCollapsed = collapsedPages.has(pageName)
+    <div className={styles.componentList} style={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative', zIndex: 0 }}>
+      {Object.entries(componentsByPage).map(([pageId, pageComponents]) => {
+        const pageName = pageComponents[0].pageName
+        const isCollapsed = collapsedPages.has(pageId)
         const completedCount = pageComponents.filter((c) => !isDescriptionEmpty(c.currentDescription)).length
         const totalCount = pageComponents.length
         const isComplete = completedCount === totalCount
+        const pageGroups = groupComponentRows(pageComponents)
+        const pageGenerateCount = pageGeneration?.counts.get(pageId) || 0
+        const isGeneratingPage = isGenerating && pageGeneration?.activePageId === pageId
+        const pageGenerateLabel = pageGeneration?.overwriteExisting ? `Replace ${pageGenerateCount}` : `Fill ${pageGenerateCount}`
+        const pageGenerateTitle = pageGenerateCount === 0
+            ? 'Nothing to generate on this page with the current filters'
+            : pageGeneration?.overwriteExisting
+              ? `Replace targeted descriptions on “${pageName}”`
+              : `Fill missing descriptions on “${pageName}”. Skips existing descriptions.`
 
         // Check if all rows in this page are expanded
-        const allRowsExpanded = pageComponents.every(c => expandedRows.has(c.id))
+        const allRowsExpanded = pageComponents.every(c => expandedRows.has(c.id)) &&
+          pageGroups.every(group => group.variants.length === 0 || !collapsedVariantGroups.has(group.id))
 
         return (
-          <div key={pageName}>
+          <div key={pageId}>
             {/* Page header */}
             <div
               style={{
@@ -197,7 +202,7 @@ export function ComponentList({
                 onClick={() =>
                   setCollapsedPages((prev) => {
                     const next = new Set(prev)
-                    next.has(pageName) ? next.delete(pageName) : next.add(pageName)
+                    next.has(pageId) ? next.delete(pageId) : next.add(pageId)
                     return next
                   })
                 }
@@ -206,7 +211,8 @@ export function ComponentList({
                   alignItems: 'center',
                   gap: '8px',
                   cursor: 'pointer',
-                  flex: 1
+                  flex: 1,
+                  minWidth: 0
                 }}
               >
                 <span
@@ -215,28 +221,50 @@ export function ComponentList({
                     transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
                     transition: 'transform 0.15s ease',
                     fontSize: '10px',
+                    flexShrink: 0,
                     color: 'var(--figma-color-text-secondary)'
                   }}
                 >
                   ▼
                 </span>
-                <Text>
-                  <Text style={{ fontWeight: 600 }}>Page: {pageName}</Text>
-                </Text>
-                <Text>
-                  <span
-                    style={{
-                      color: isComplete
-                        ? 'var(--figma-color-text-success)'
-                        : completedCount > 0
-                          ? 'var(--figma-color-text-warning)'
-                          : 'var(--figma-color-text-secondary)'
-                    }}
-                  >
-                    {completedCount} of {totalCount} described
-                  </span>
-                </Text>
+                <span title={pageName} style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                  Page: {pageName}
+                </span>
+                <span
+                  style={{
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap',
+                    color: isComplete
+                      ? 'var(--figma-color-text-success)'
+                      : completedCount > 0
+                        ? 'var(--figma-color-text-warning)'
+                        : 'var(--figma-color-text-secondary)'
+                  }}
+                >
+                  {completedCount} of {totalCount} described
+                </span>
               </div>
+
+              {pageGeneration && (
+                <button
+                  type="button"
+                  className={styles.pageGenerateButton}
+                  disabled={!isGeneratingPage && (isGenerating || pageGeneration.isRefreshing || pageGenerateCount === 0)}
+                  title={isGeneratingPage ? 'Stop remaining generation on this page. Already-written descriptions stay.' : pageGenerateTitle}
+                  aria-label={isGeneratingPage ? `Stop generation on ${pageName}` : `${pageGenerateLabel} descriptions on ${pageName}`}
+                  onClick={() => {
+                    if (isGeneratingPage) {
+                      pageGeneration.onCancel()
+                    } else {
+                      void pageGeneration.onGenerate(pageId)
+                    }
+                  }}
+                >
+                  {isGeneratingPage
+                    ? `Stop (${pageGeneration.progress.current}/${pageGeneration.progress.total})`
+                    : pageGenerateLabel}
+                </button>
+              )}
 
               {/* Expand All / Collapse All button or checkmark */}
               {isComplete ? (
@@ -259,6 +287,7 @@ export function ComponentList({
                     color: 'var(--figma-color-text-secondary)',
                     fontSize: '11px',
                     cursor: 'pointer',
+                    flexShrink: 0,
                     whiteSpace: 'nowrap'
                   }}
                 >
@@ -268,35 +297,67 @@ export function ComponentList({
             </div>
 
             {/* Component rows */}
-            {!isCollapsed &&
-              pageComponents.map((component) => (
-                <ComponentRow
-                  key={component.id}
-                  component={component}
-                  showVariants={showVariants}
-                  isModalOpen={isModalOpen}
-                  onGenerate={onGenerate}
-                  onGenerateComponentSet={onGenerateComponentSet}
-                  onGenerated={onGenerated}
-                  onConfirm={onConfirm}
-                  onReject={onReject}
-                  onRevert={onRevert}
-                  onSelect={onSelect}
-                  isSelected={selectedRowId === component.id}
-                  onRowSelect={onRowSelect}
-                  isGenerating={isGenerating}
-                  hasApiKey={hasApiKey}
-                  providerLabel={providerLabel}
-                  externalError={rowErrors[component.id]}
-                  isExpanded={expandedRows.has(component.id)}
-                  onToggleExpand={handleToggleExpand}
-                  onOpenParent={handleOpenParent}
-                  onRowRef={handleRowRef}
-                  isIcon={iconOverrides[component.id] ?? component.isIcon ?? false}
-                  onToggleIcon={onToggleIcon}
-                  wasGeneratedThisSession={generatedThisSession.has(component.id)}
-                />
-              ))}
+            {!isCollapsed && (
+              <div className={styles.componentPageRows}>
+                {pageGroups.map((group) => (
+                  <div
+                    key={group.id}
+                    className={styles.componentGroup}
+                    role="group"
+                    aria-label={group.component?.name || group.parentName}
+                  >
+                    {group.component ? renderRow(group.component) : (
+                      <div className={styles.componentSetContext}>
+                        <span>{group.parentName}</span>
+                        <span>Component set</span>
+                      </div>
+                    )}
+                    {group.variants.length > 0 && (
+                      <div className={styles.componentVariants} role="group" aria-label={`Variants of ${group.component?.name || group.parentName}`}>
+                        <button
+                          type="button"
+                          className={styles.componentVariantsLabel}
+                          aria-label={`Variants of ${group.component?.name || group.parentName}`}
+                          aria-expanded={!collapsedVariantGroups.has(group.id)}
+                          aria-controls={`variants-${group.id}`}
+                          onClick={() => setCollapsedVariantGroups((prev) => {
+                            const next = new Set(prev)
+                            next.has(group.id) ? next.delete(group.id) : next.add(group.id)
+                            return next
+                          })}
+                        >
+                          <svg
+                            width="10"
+                            height="10"
+                            viewBox="0 0 10 10"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            aria-hidden="true"
+                            style={{ transform: collapsedVariantGroups.has(group.id) ? 'none' : 'rotate(90deg)' }}
+                          >
+                            <path d="m3.5 2 3 3-3 3" />
+                          </svg>
+                          Variants
+                        </button>
+                        {/* Keep editors mounted to preserve drafts and pending saves. */}
+                        <div
+                          id={`variants-${group.id}`}
+                          className={styles.componentVariantRows}
+                          hidden={collapsedVariantGroups.has(group.id)}
+                        >
+                          {group.variants.map((variant) => (
+                            <div key={variant.id} className={styles.componentVariant}>
+                              {renderRow(variant, collapsedVariantGroups.has(group.id))}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )
       })}
