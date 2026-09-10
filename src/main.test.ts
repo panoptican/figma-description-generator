@@ -75,6 +75,17 @@ describe('dynamic page access', () => {
     expect(emit.mock.calls[0][1].map((component: any) => component.id)).toEqual(['A:component', 'B:component'])
   })
 
+  it('preserves page identities when two pages have the same name', async () => {
+    pageA.name = 'Components'
+    pageB.name = 'Components'
+    allPages()
+    await handlers.get('LOAD_COMPONENTS')!()
+    expect(emit.mock.calls[0][1]).toEqual([
+      expect.objectContaining({ pageId: 'A', pageName: 'Components' }),
+      expect.objectContaining({ pageId: 'B', pageName: 'Components' }),
+    ])
+  })
+
   it('only scans the current page and discards a scan overtaken by a page switch', async () => {
     currentPage()
     const pending = deferred()
@@ -88,13 +99,38 @@ describe('dynamic page access', () => {
     await oldScan
     expect(emit).toHaveBeenCalledOnce()
     expect(emit.mock.calls[0][1][0].id).toBe('B:component')
+    expect(emit.mock.calls[0][2]).toBe('B')
+  })
+
+  it('sends the new page name even when that page has no components', async () => {
+    currentPage()
+    await handlers.get('LOAD_COMPONENTS')!()
+    emit.mockClear()
+    pageB.findAllWithCriteria.mockReturnValue([])
+    api.currentPage = pageB
+    await pageChanged()
+    expect(emit).toHaveBeenCalledExactlyOnceWith('COMPONENTS_LOADED', [], 'B')
+  })
+
+  it('includes the updated page name when rescanning a renamed page', async () => {
+    currentPage()
+    pageA.name = 'Renamed page'
+    await handlers.get('LOAD_COMPONENTS')!()
+    expect(emit).toHaveBeenCalledWith('COMPONENTS_LOADED', [
+      expect.objectContaining({ pageName: 'Renamed page' }),
+    ], 'Renamed page')
+  })
+
+  it('does not follow page navigation in Entire file mode', () => {
+    allPages()
+    expect(api.on).not.toHaveBeenCalledWith('currentpagechange', expect.any(Function))
   })
 
   it('ends loading with an actionable notification if a page cannot load', async () => {
     pageB.loadAsync.mockRejectedValue(new Error('Unavailable'))
     allPages()
     await handlers.get('LOAD_COMPONENTS')!()
-    expect(emit).toHaveBeenCalledWith('COMPONENTS_LOADED', [])
+    expect(emit).toHaveBeenCalledWith('COMPONENTS_LOADED', [], 'A')
     expect(api.notify).toHaveBeenCalledWith(expect.stringContaining('Rescan'), { error: true })
   })
 
@@ -172,5 +208,80 @@ describe('dynamic page access', () => {
     api.getNodeByIdAsync.mockRejectedValue(new Error('Unavailable'))
     await handlers.get('EXPORT_IMAGE')!({ id: 'missing' })
     expect(emit).toHaveBeenCalledWith('IMAGE_EXPORTED', { id: 'missing', imageBase64: null })
+  })
+
+  it('gets the Figma payment token and status in the main thread', async () => {
+    api.payments = {
+      status: { type: 'UNPAID' },
+      getPluginPaymentTokenAsync: vi.fn().mockResolvedValue('payment-token')
+    }
+    currentPage()
+    await handlers.get('GET_PAYMENT_TOKEN')!()
+    expect(emit).toHaveBeenCalledWith('PAYMENT_TOKEN', { token: 'payment-token', status: 'UNPAID' })
+  })
+
+  it('emits a null payment token when Figma payment lookup throws', async () => {
+    api.payments = {
+      status: { type: 'NOT_SUPPORTED' },
+      getPluginPaymentTokenAsync: vi.fn().mockRejectedValue(new Error('Unavailable'))
+    }
+    currentPage()
+    await handlers.get('GET_PAYMENT_TOKEN')!()
+    expect(emit).toHaveBeenCalledWith('PAYMENT_TOKEN', { token: null, status: 'NOT_SUPPORTED' })
+  })
+
+  it('always finishes the checkout event when checkout throws', async () => {
+    api.payments = {
+      status: { type: 'UNPAID' },
+      initiateCheckoutAsync: vi.fn().mockRejectedValue(new Error('Dismissed'))
+    }
+    currentPage()
+    await handlers.get('START_CHECKOUT')!()
+    expect(emit).toHaveBeenCalledWith('CHECKOUT_FINISHED', { status: 'UNPAID' })
+  })
+})
+
+describe('settings migration', () => {
+  beforeEach(() => {
+    handlers.clear()
+    emit.mockClear()
+    vi.stubGlobal('figma', { currentPage: { id: 'A', name: 'A' }, root: { children: [] }, clientStorage: { deleteAsync: vi.fn().mockResolvedValue(undefined) }, on: vi.fn(), off: vi.fn(), notify: vi.fn() })
+  })
+
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('drops the saved API key and provider fields and rewrites storage without them', async () => {
+    const utilities = await import('@create-figma-plugin/utilities')
+    const loadSettingsAsync = utilities.loadSettingsAsync as unknown as ReturnType<typeof vi.fn>
+    const saveSettingsAsync = utilities.saveSettingsAsync as unknown as ReturnType<typeof vi.fn>
+    loadSettingsAsync.mockResolvedValue({
+      provider: 'chatgpt', apiKey: 'sk-old', models: { chatgpt: { id: 'x', name: 'x' } },
+      customPrompt: 'Mine', customVariantPrompt: '', customIconPrompt: '',
+      includeImage: true, showVariants: true, overwriteExisting: false, iconOverrides: { a: false },
+    })
+    saveSettingsAsync.mockResolvedValue(undefined)
+    currentPage()
+
+    await handlers.get('LOAD_SETTINGS')!()
+
+    const expected = { customPrompt: 'Mine', customVariantPrompt: '', customIconPrompt: '', includeImage: true, showVariants: true, overwriteExisting: false, iconOverrides: { a: false } }
+    expect(saveSettingsAsync).toHaveBeenCalledWith(expected)
+    expect(emit).toHaveBeenCalledWith('SETTINGS_LOADED', expected)
+    expect(JSON.stringify(emit.mock.calls)).not.toContain('sk-old')
+  })
+
+  it('does not rewrite storage when settings are already in the current shape', async () => {
+    const utilities = await import('@create-figma-plugin/utilities')
+    const loadSettingsAsync = utilities.loadSettingsAsync as unknown as ReturnType<typeof vi.fn>
+    const saveSettingsAsync = utilities.saveSettingsAsync as unknown as ReturnType<typeof vi.fn>
+    saveSettingsAsync.mockClear()
+    const current = { customPrompt: '', customVariantPrompt: '', customIconPrompt: '', includeImage: false, showVariants: true, overwriteExisting: false, iconOverrides: {} }
+    loadSettingsAsync.mockResolvedValue(current)
+    currentPage()
+
+    await handlers.get('LOAD_SETTINGS')!()
+
+    expect(saveSettingsAsync).not.toHaveBeenCalled()
+    expect(emit).toHaveBeenCalledWith('SETTINGS_LOADED', current)
   })
 })

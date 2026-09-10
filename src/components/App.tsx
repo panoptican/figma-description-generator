@@ -1,7 +1,7 @@
 import { createDefaultSettings } from '../settings'
 import { emit, on } from '@create-figma-plugin/utilities'
 import { h } from 'preact'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
 
 import {
   ApplyDescriptionHandler,
@@ -10,6 +10,10 @@ import {
   DescriptionAppliedHandler,
   ExportImageHandler,
   ImageExportedHandler,
+  GetPaymentTokenHandler,
+  PaymentTokenHandler,
+  StartCheckoutHandler,
+  CheckoutFinishedHandler,
   LoadComponentsHandler,
   LoadSettingsHandler,
   SaveSettingsHandler,
@@ -20,14 +24,17 @@ import {
   SelectComponentHandler
 } from '../types'
 import {
-  generateDescription,
+  generateDescriptionWithUsage,
+  fetchUsage,
+  QuotaExceededError,
+  TokenError,
+  Usage,
   DEFAULT_PROMPT,
   DEFAULT_VARIANT_PROMPT,
-  DEFAULT_ICON_PROMPT,
-  getProviderDisplayName
+  DEFAULT_ICON_PROMPT
 } from '../services/ai'
-import { selectedModel } from '../services/models'
-import { getComponentSetMembers, getGenerationBatches } from '../utils/generationBatches'
+import { GenerationBatch, getComponentSetMembers, getGenerationBatches } from '../utils/generationBatches'
+import { isIconModeEnabled } from '../utils/icon'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { Header } from './Header'
 import { SettingsModal } from './SettingsModal'
@@ -46,22 +53,30 @@ function isAbortError(error: unknown): boolean {
 
 export function App({ scope, currentPageName }: AppProps) {
   const [components, setComponents] = useState<ComponentData[]>([])
+  const [loadedPageName, setLoadedPageName] = useState(currentPageName)
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [searchValue, setSearchValue] = useState('')
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isGeneratingAll, setIsGeneratingAll] = useState(false)
+  const [generatingPageId, setGeneratingPageId] = useState<string | null>(null)
   const [generatedThisSession, setGeneratedThisSession] = useState<Set<string>>(new Set())
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: 0 })
   const [rowErrors, setRowErrors] = useState<Record<string, string | undefined>>({})
-  const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
+  const [usage, setUsage] = useState<Usage | null>(null)
+  const [paymentStatus, setPaymentStatus] = useState<'UNPAID' | 'PAID' | 'NOT_SUPPORTED'>('NOT_SUPPORTED')
+  const [headerNotice, setHeaderNotice] = useState<string | null>(null)
+  const [errorResetVersion, setErrorResetVersion] = useState(0)
   const [iconOverrides, setIconOverrides] = useState<Record<string, boolean>>({})
   const abortGenerateAllRef = useRef(false)
   const generateAllAbortControllerRef = useRef<AbortController | null>(null)
   // BUG-001 fix: Map of resolvers keyed by component ID instead of single ref
   const imageExportResolvers = useRef<Map<string, (value: string | null) => void>>(new Map())
   const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const paymentTokenRef = useRef<{ token: string | null; fetchedAt: number }>({ token: null, fetchedAt: 0 })
+  const paymentTokenRequestRef = useRef<Promise<string> | null>(null)
+  const paymentTokenResolverRef = useRef<((token: string) => void) | null>(null)
   const CONCURRENCY_LIMIT = 3
 
   // Helper to export component image and wait for result
@@ -72,13 +87,29 @@ export function App({ scope, currentPageName }: AppProps) {
     })
   }, [])
 
-  // Load initial data
+  const requestPaymentToken = useCallback((force = false): Promise<string> => {
+    const cached = paymentTokenRef.current
+    if (!force && cached.token && Date.now() - cached.fetchedAt < 5 * 60 * 1000) {
+      return Promise.resolve(cached.token)
+    }
+    if (paymentTokenRequestRef.current) return paymentTokenRequestRef.current
+    paymentTokenRequestRef.current = new Promise<string>((resolve) => {
+      paymentTokenResolverRef.current = resolve
+      emit<GetPaymentTokenHandler>('GET_PAYMENT_TOKEN')
+    }).finally(() => {
+      paymentTokenRequestRef.current = null
+      paymentTokenResolverRef.current = null
+    })
+    return paymentTokenRequestRef.current!
+  }, [])
+
+  // Load initial data and the current Figma payment identity.
   useEffect(() => {
     const unsubscribeComponents = on<ComponentsLoadedHandler>(
       'COMPONENTS_LOADED',
-      (loadedComponents) => {
+      (loadedComponents, pageName) => {
         setComponents(loadedComponents)
-        setSelectedRowId(null)
+        setLoadedPageName(pageName)
         setRowErrors({})
         setIsRefreshing(false)
         setIsLoading(false)
@@ -128,8 +159,33 @@ export function App({ scope, currentPageName }: AppProps) {
       }
     )
 
+    const unsubscribePaymentToken = on<PaymentTokenHandler>('PAYMENT_TOKEN', ({ token, status }) => {
+      paymentTokenRef.current = { token, fetchedAt: Date.now() }
+      setPaymentStatus(status)
+      paymentTokenResolverRef.current?.(token || '')
+      if (token) {
+        fetchUsage(token).then(setUsage).catch((error) => {
+          if (!(error instanceof TokenError)) console.error('Could not load usage:', error)
+        })
+      } else {
+        setUsage(null)
+      }
+    })
+
+    const unsubscribeCheckout = on<CheckoutFinishedHandler>('CHECKOUT_FINISHED', ({ status }) => {
+      setPaymentStatus(status)
+      setHeaderNotice(null)
+      setRowErrors({})
+      setErrorResetVersion((version) => version + 1)
+      void requestPaymentToken(true).then((token) => {
+        if (token) return fetchUsage(token).then(setUsage)
+        setUsage(null)
+      }).catch((error) => console.error('Could not refresh usage after checkout:', error))
+    })
+
     emit<LoadSettingsHandler>('LOAD_SETTINGS')
     emit<LoadComponentsHandler>('LOAD_COMPONENTS')
+    emit<GetPaymentTokenHandler>('GET_PAYMENT_TOKEN')
 
     return () => {
       unsubscribeComponents()
@@ -137,8 +193,10 @@ export function App({ scope, currentPageName }: AppProps) {
       unsubscribeSettingsSaved()
       unsubscribeDescriptionApplied()
       unsubscribeImageExported()
+      unsubscribePaymentToken()
+      unsubscribeCheckout()
     }
-  }, [])
+  }, [requestPaymentToken])
 
   const handleRefreshComponents = useCallback(() => {
     if (isRefreshing || isGeneratingAll) {
@@ -146,8 +204,8 @@ export function App({ scope, currentPageName }: AppProps) {
     }
 
     setIsRefreshing(true)
-    setSelectedRowId(null)
     setRowErrors({})
+    setHeaderNotice(null)
     emit<LoadComponentsHandler>('LOAD_COMPONENTS')
   }, [isRefreshing, isGeneratingAll])
 
@@ -192,24 +250,16 @@ export function App({ scope, currentPageName }: AppProps) {
 
   const generationBatches = getGenerationBatches(components, filteredComponents, settings.overwriteExisting, settings.showVariants)
   const generateCount = generationBatches.reduce((count, batch) => count + batch.members.length, 0)
-  const selectedComponent = useMemo(
-    () => filteredComponents.find((component) => component.id === selectedRowId) ?? null,
-    [filteredComponents, selectedRowId]
-  )
-  const providerLabel = useMemo(() => getProviderDisplayName(settings.provider), [settings.provider])
-
-  useEffect(() => {
-    if (selectedRowId === null) {
-      return
+  const pageGenerationCounts = new Map<string, number>()
+  for (const batch of generationBatches) {
+    for (const member of batch.members) {
+      pageGenerationCounts.set(member.pageId, (pageGenerationCounts.get(member.pageId) || 0) + 1)
     }
-    if (!filteredComponents.some((component) => component.id === selectedRowId)) {
-      setSelectedRowId(null)
-    }
-  }, [filteredComponents, selectedRowId])
+  }
 
   const handleGenerate = useCallback(
     async (component: ComponentData, abortSignal?: AbortSignal): Promise<string> => {
-      const isIcon = iconOverrides[component.id] ?? component.isIcon ?? false
+      const isIcon = isIconModeEnabled(component.isIcon, iconOverrides[component.id])
       let imageBase64: string | undefined
 
       if (settings.includeImage || isIcon) {
@@ -219,41 +269,40 @@ export function App({ scope, currentPageName }: AppProps) {
         }
       }
 
-      const description = await generateDescription(
-        settings.provider,
-        settings.apiKey,
-        component.name,
-        component.type,
-        component.properties,
-        component.parentName,
-        settings.customPrompt || undefined,
-        settings.customVariantPrompt || undefined,
+      const input = {
+        componentName: component.name,
+        componentType: component.type,
+        properties: component.properties,
+        parentName: component.parentName,
+        customPrompt: settings.customPrompt || undefined,
+        customVariantPrompt: settings.customVariantPrompt || undefined,
         imageBase64,
-        { isIcon, customIconPrompt: settings.customIconPrompt || undefined },
-        component.variantContext,
-        abortSignal,
-        selectedModel(settings.provider, settings.models)
-      )
-
-      return description
+        iconOptions: { isIcon, customIconPrompt: settings.customIconPrompt || undefined },
+        variantContext: component.variantContext,
+        abortSignal
+      }
+      let token = await requestPaymentToken()
+      let result
+      try {
+        result = await generateDescriptionWithUsage({ ...input, paymentToken: token })
+      } catch (error) {
+        if (!(error instanceof TokenError)) throw error
+        token = await requestPaymentToken(true)
+        result = await generateDescriptionWithUsage({ ...input, paymentToken: token })
+      }
+      setUsage(result.usage)
+      setHeaderNotice(null)
+      return result.description
     },
-    [settings, exportComponentImage, iconOverrides]
+    [settings, exportComponentImage, iconOverrides, requestPaymentToken]
   )
 
-  // Toggle icon status for a component
-  const handleToggleIcon = useCallback((componentId: string) => {
+  const handleDisableIcon = useCallback((componentId: string) => {
+    if (!components.find((component) => component.id === componentId)?.isIcon) return
+
     setIconOverrides((prev) => {
-      const current = prev[componentId]
-      const component = components.find((c) => c.id === componentId)
-      const autoDetected = component?.isIcon ?? false
-      let newOverrides: Record<string, boolean>
-      // Cycle: if no override, set opposite of auto; if overridden, clear override
-      if (current === undefined) {
-        newOverrides = { ...prev, [componentId]: !autoDetected }
-      } else {
-        const { [componentId]: _, ...rest } = prev
-        newOverrides = rest
-      }
+      if (prev[componentId] === false) return prev
+      const newOverrides = { ...prev, [componentId]: false }
 
       // BUG-003 fix: persist icon overrides to settings
       const newSettings = { ...settings, iconOverrides: newOverrides }
@@ -299,6 +348,10 @@ export function App({ scope, currentPageName }: AppProps) {
         markGeneratedThisSession(member.id)
         handleConfirm(member.id, description)
       } catch (error) {
+        if (error instanceof QuotaExceededError) {
+          setHeaderNotice(error.message)
+          return
+        }
         console.error(`Failed to generate for ${member.name}:`, error)
         failures.push(member.name)
         setRowErrors((prev) => ({
@@ -356,23 +409,17 @@ export function App({ scope, currentPageName }: AppProps) {
     emit<SaveSettingsHandler>('SAVE_SETTINGS', defaults)
   }, [])
 
-  const handleGenerateAll = useCallback(async () => {
-    if (!settings.apiKey) return
+  const handleGenerateBatches = useCallback(async (batchesToGenerate: GenerationBatch[], pageId?: string) => {
+    if (isRefreshing || generateAllAbortControllerRef.current) return
+
+    const totalToGenerate = batchesToGenerate.reduce((count, batch) => count + batch.members.length, 0)
+    if (totalToGenerate === 0) return
 
     setIsGeneratingAll(true)
+    setGeneratingPageId(pageId ?? null)
     abortGenerateAllRef.current = false
     const abortController = new AbortController()
     generateAllAbortControllerRef.current = abortController
-
-    const batchesToGenerate = generationBatches
-    const totalToGenerate = batchesToGenerate.reduce((count, batch) => count + batch.members.length, 0)
-
-    if (totalToGenerate === 0) {
-      setIsGeneratingAll(false)
-      setGenerateProgress({ current: 0, total: 0 })
-      generateAllAbortControllerRef.current = null
-      return
-    }
 
     setGenerateProgress({ current: 0, total: totalToGenerate })
 
@@ -415,6 +462,12 @@ export function App({ scope, currentPageName }: AppProps) {
           if (abortGenerateAllRef.current || isAbortError(error)) {
             return
           }
+          if (error instanceof QuotaExceededError) {
+            setHeaderNotice(error.message)
+            abortGenerateAllRef.current = true
+            abortController.abort()
+            return
+          }
           console.error(`Failed to generate for ${component.name}:`, error)
           setRowErrors((prev) => ({
             ...prev,
@@ -439,48 +492,29 @@ export function App({ scope, currentPageName }: AppProps) {
     await Promise.all(Array.from({ length: workerCount }, runWorker))
 
     setIsGeneratingAll(false)
+    setGeneratingPageId(null)
     setGenerateProgress({ current: 0, total: 0 })
     abortGenerateAllRef.current = false
     generateAllAbortControllerRef.current = null
-  }, [generationBatches, settings, handleGenerate, markGeneratedThisSession])
+  }, [isRefreshing, handleGenerate, markGeneratedThisSession])
+
+  const handleUpgrade = useCallback(() => {
+    emit<StartCheckoutHandler>('START_CHECKOUT')
+  }, [])
+
+  const handleGenerateAll = useCallback(() => {
+    return handleGenerateBatches(generationBatches)
+  }, [generationBatches, handleGenerateBatches])
+
+  const handleGeneratePage = useCallback((pageId: string) => {
+    const batches = getGenerationBatches(components, filteredComponents, settings.overwriteExisting, settings.showVariants, pageId)
+    return handleGenerateBatches(batches, pageId)
+  }, [components, filteredComponents, settings.overwriteExisting, settings.showVariants, handleGenerateBatches])
 
   const handleCancelGenerateAll = useCallback(() => {
     abortGenerateAllRef.current = true
     generateAllAbortControllerRef.current?.abort()
   }, [])
-
-  const handleGenerateSelected = useCallback(async () => {
-    if (!selectedComponent || !settings.apiKey || isGeneratingAll) {
-      return
-    }
-
-    try {
-      if (selectedComponent.type === 'VARIANT') {
-        const parent = components.find((component) => component.id === selectedComponent.parentId)
-        if (parent) {
-          await handleGenerateComponentSet(parent)
-        }
-        return
-      }
-
-      const description = await handleGenerate(selectedComponent)
-      markGeneratedThisSession(selectedComponent.id)
-      handleConfirm(selectedComponent.id, description)
-    } catch (error) {
-      console.error(`Failed to generate for ${selectedComponent.name}:`, error)
-      setRowErrors((prev) => ({
-        ...prev,
-        [selectedComponent.id]: error instanceof Error ? error.message : 'Generation failed'
-      }))
-    }
-  }, [selectedComponent, components, settings.apiKey, isGeneratingAll, handleGenerate, handleGenerateComponentSet, markGeneratedThisSession, handleConfirm])
-
-  const handleRevertSelected = useCallback(() => {
-    if (!selectedComponent) {
-      return
-    }
-    handleRevert(selectedComponent.id)
-  }, [selectedComponent, handleRevert])
 
   // Close Settings with Escape
   const handleCloseModal = useCallback(() => {
@@ -493,14 +527,10 @@ export function App({ scope, currentPageName }: AppProps) {
   useKeyboardShortcuts(
     {
       onGenerateAll: () => {
-        if (settings.apiKey && !isGeneratingAll) {
+        if (!isGeneratingAll) {
           handleGenerateAll()
         }
       },
-      onGenerateSingle: () => {
-        void handleGenerateSelected()
-      },
-      onRevert: handleRevertSelected,
       onCloseModal: handleCloseModal,
       onFocusSearch: () => {
         searchInputRef.current?.focus()
@@ -543,18 +573,31 @@ export function App({ scope, currentPageName }: AppProps) {
         onCancelClick={handleCancelGenerateAll}
         onRefreshClick={handleRefreshComponents}
         refreshTitle={scope === 'current-page' ? 'Rescan this page' : 'Rescan entire file'}
-        scopeLabel={scope === 'current-page' ? `This page · ${currentPageName}` : 'Entire file'}
+        scopeLabel={scope === 'current-page' ? 'This page' : 'Entire file'}
+        pageName={scope === 'current-page' ? loadedPageName : undefined}
         overwriteExisting={settings.overwriteExisting}
         isGenerating={isGeneratingAll}
         isRefreshing={isRefreshing}
-        hasApiKey={!!settings.apiKey}
         progress={generateProgress}
         generateCount={generateCount}
         searchInputRef={searchInputRef}
+        usage={usage}
+        paymentStatus={paymentStatus}
+        notice={headerNotice}
+        onUpgrade={handleUpgrade}
       />
 
       <ComponentList
         components={filteredComponents}
+        pageGeneration={scope === 'all-pages' ? {
+          counts: pageGenerationCounts,
+          activePageId: generatingPageId,
+          progress: generateProgress,
+          overwriteExisting: settings.overwriteExisting,
+          isRefreshing,
+          onGenerate: handleGeneratePage,
+          onCancel: handleCancelGenerateAll,
+        } : undefined}
         showVariants={settings.showVariants}
         searchValue={searchValue}
         scope={scope}
@@ -565,19 +608,16 @@ export function App({ scope, currentPageName }: AppProps) {
         onConfirm={handleConfirm}
         onReject={handleReject}
         onRevert={handleRevert}
-        selectedRowId={selectedRowId}
-        onRowSelect={setSelectedRowId}
         onSelect={(id) => {
-          setSelectedRowId(id)
           emit<SelectComponentHandler>('SELECT_COMPONENT', { id })
         }}
         isGenerating={isGeneratingAll}
-        hasApiKey={!!settings.apiKey}
-        providerLabel={providerLabel}
         rowErrors={rowErrors}
         iconOverrides={iconOverrides}
-        onToggleIcon={handleToggleIcon}
+        onDisableIcon={handleDisableIcon}
         generatedThisSession={generatedThisSession}
+        onUpgrade={handleUpgrade}
+        errorResetVersion={errorResetVersion}
       />
 
       <SettingsModal

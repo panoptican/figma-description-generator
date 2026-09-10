@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "description-generator",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "description-generator",
+      "database_id": "79cb9a89-7f46-46c1-947a-7032ebc88d9c"
+    }
+  ],
+  "vars": {
+    "FREE_LIFETIME_LIMIT": "1000",
+    "PRO_MONTHLY_LIMIT": "10000"
+  },
+  // Per-IP cap. The plugin runs three requests at a time and retries on 429,
+  // so a large batch self-paces instead of failing. Period must be 10 or 60.
+  "ratelimits": [
+    {
+      "name": "GENERATE_LIMIT",
+      "namespace_id": "1001",
+      "simple": { "limit": 60, "period": 60 }
+    }
+  ]
+}
