@@ -3,7 +3,7 @@ import { h } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 
 import { ComponentData } from '../types'
-import { QuotaExceededError, Usage } from '../services/ai'
+import { GenerationError } from '../services/generationRunner'
 import { getDescriptionStatus } from '../utils/descriptionStatus'
 import { handleRowKeyboardShortcut } from '../hooks/useKeyboardShortcuts'
 import styles from '../ui.css'
@@ -13,22 +13,20 @@ interface ComponentRowProps {
   showVariants: boolean
   isModalOpen?: boolean
   isHidden?: boolean
-  onGenerate: (component: ComponentData) => Promise<string>
+  onGenerate: (component: ComponentData) => Promise<void>
   onGenerateComponentSet: (component: ComponentData) => Promise<void>
-  onGenerated: (id: string) => void
   onConfirm: (id: string, description: string) => void
-  onReject: (id: string) => void
   onRevert: (id: string) => void
   onSelect: (id: string) => void
   isGenerating: boolean
-  externalError?: string
+  externalError?: GenerationError
   isExpanded: boolean
   onToggleExpand: (id: string) => void
   isIcon: boolean
   onDisableIcon: (id: string) => void
   wasGeneratedThisSession: boolean
   onUpgrade: () => void
-  errorResetVersion: number
+  isPending: boolean
 }
 
 function truncateDescription(text: string | undefined, maxLength: number = 60): string {
@@ -44,9 +42,7 @@ export function ComponentRow({
   showVariants,
   onGenerate,
   onGenerateComponentSet,
-  onGenerated,
   onConfirm,
-  onReject,
   onRevert,
   onSelect,
   isGenerating,
@@ -57,13 +53,9 @@ export function ComponentRow({
   onDisableIcon,
   wasGeneratedThisSession,
   onUpgrade,
-  errorResetVersion
+  isPending
 }: ComponentRowProps) {
   const [description, setDescription] = useState(component.currentDescription)
-  const [loading, setLoading] = useState(false)
-  const [groupLoading, setGroupLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [quotaUsage, setQuotaUsage] = useState<Usage | null>(null)
   const [isDirty, setIsDirty] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const descriptionRef = useRef(description)
@@ -85,11 +77,6 @@ export function ComponentRow({
     setIsDirty(false)
     setIsSaving(false)
   }, [component.currentDescription])
-
-  useEffect(() => {
-    setError(null)
-    setQuotaUsage(null)
-  }, [errorResetVersion])
 
   useEffect(() => {
     if (!isDirty || description === component.currentDescription) {
@@ -131,9 +118,9 @@ export function ComponentRow({
   const descriptionStatusLabel = descriptionStatus === 'generated'
     ? 'Generated this session'
     : 'Has description'
-  const feedbackLabel = error || externalError
+  const feedbackLabel = externalError
     ? null
-    : loading || groupLoading
+    : isPending
       ? 'Generating...'
       : isSaving
         ? 'Saving...'
@@ -141,36 +128,6 @@ export function ComponentRow({
           ? 'Unsaved changes'
           : null
   const relationshipLabel = component.type === 'COMPONENT_SET' ? 'Component set' : ''
-
-  async function handleGenerate() {
-    setLoading(true)
-    setError(null)
-    setQuotaUsage(null)
-    try {
-      const newDescription = await onGenerate(component)
-      setDescription(newDescription)
-      onGenerated(component.id)
-      onConfirm(component.id, newDescription)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate')
-      setQuotaUsage(err instanceof QuotaExceededError ? err.usage : null)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleGenerateComponentSet() {
-    setGroupLoading(true)
-    setError(null)
-    setQuotaUsage(null)
-    try {
-      await onGenerateComponentSet(component)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate component set')
-    } finally {
-      setGroupLoading(false)
-    }
-  }
 
   function handleTitleActivation(e: MouseEvent) {
     e.stopPropagation()
@@ -192,7 +149,7 @@ export function ComponentRow({
 
     handleRowKeyboardShortcut(event, {
       onGenerate: () => {
-        if (!loading && !groupLoading && !isGenerating) void handleGenerate()
+        if (!isGenerating) void onGenerate(component)
       },
       onRevert: () => {
         if (component.previousDescription !== undefined) onRevert(component.id)
@@ -314,7 +271,6 @@ export function ComponentRow({
         onInput={(e) => {
           setDescription((e.target as HTMLTextAreaElement).value)
           setIsDirty(true)
-          setError(null)
         }}
         onClick={(e) => {
           e.stopPropagation()
@@ -333,10 +289,10 @@ export function ComponentRow({
         }}
       />
 
-      {(error || externalError) && (
+      {(externalError) && (
         <div style={{ color: 'var(--figma-color-text-danger)', marginTop: '4px', fontSize: '11px' }}>
-          <div>{error || externalError}</div>
-          {quotaUsage?.plan === 'free' && (
+          <div>{externalError.message}</div>
+          {externalError.usage?.plan === 'free' && (
             <Button
               secondary
               onClick={(e: MouseEvent) => {
@@ -374,10 +330,9 @@ export function ComponentRow({
                 className={styles.joinedGenerateButton}
                 onClick={(e: MouseEvent) => {
                   e.stopPropagation()
-                  handleGenerate()
+                  void onGenerate(component)
                 }}
-                disabled={loading || groupLoading || isGenerating}
-                loading={loading}
+                disabled={isGenerating}
                 aria-label={`Generate a description for ${component.name} only`}
                 title="Generate a description for this component set only. Replaces its existing description."
               >
@@ -387,10 +342,9 @@ export function ComponentRow({
                 className={styles.joinedGenerateButton}
                 onClick={(e: MouseEvent) => {
                   e.stopPropagation()
-                  handleGenerateComponentSet()
+                  void onGenerateComponentSet(component)
                 }}
-                disabled={groupLoading || loading || isGenerating}
-                loading={groupLoading}
+                disabled={isGenerating}
                 aria-label={`Generate descriptions for ${component.name} and all variants`}
                 title="Generate descriptions for this component set and all variants. Replaces existing descriptions."
               >
@@ -401,10 +355,9 @@ export function ComponentRow({
             <Button
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()
-                handleGenerate()
+                void onGenerate(component)
               }}
-              disabled={loading || groupLoading || isGenerating}
-              loading={loading}
+              disabled={isGenerating}
             >
               Generate description
             </Button>

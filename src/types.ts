@@ -85,12 +85,12 @@ export interface SelectComponentHandler extends EventHandler {
 
 export interface ExportImageHandler extends EventHandler {
   name: 'EXPORT_IMAGE'
-  handler: (data: { id: string }) => void
+  handler: (data: { id: string; requestId: number }) => void
 }
 
 export interface ImageExportedHandler extends EventHandler {
   name: 'IMAGE_EXPORTED'
-  handler: (data: { id: string; imageBase64: string | null }) => void
+  handler: (data: { id: string; requestId: number; imageBase64: string | null }) => void
 }
 
 export interface GetPaymentTokenHandler extends EventHandler {

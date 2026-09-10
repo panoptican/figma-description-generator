@@ -25,17 +25,15 @@ function makeRow(overrides: Partial<RowProps> = {}) {
     isGenerating: false,
     isIcon: false,
     wasGeneratedThisSession: false,
-    onGenerate: vi.fn().mockResolvedValue('New description'),
+    onGenerate: vi.fn().mockResolvedValue(undefined),
     onGenerateComponentSet: vi.fn(),
-    onGenerated: vi.fn(),
     onConfirm: vi.fn(),
-    onReject: vi.fn(),
     onRevert: vi.fn(),
     onSelect: vi.fn(),
     onToggleExpand: vi.fn(),
     onDisableIcon: vi.fn(),
     onUpgrade: vi.fn(),
-    errorResetVersion: 0,
+    isPending: false,
     ...overrides,
   }
   const row = ComponentRow(props)
@@ -76,7 +74,7 @@ describe('focused row shortcuts', () => {
 
     expect(props.onGenerate).toHaveBeenCalledExactlyOnceWith(props.component)
     expect(props.onGenerateComponentSet).not.toHaveBeenCalled()
-    expect(props.onConfirm).toHaveBeenCalledExactlyOnceWith('variant-a', 'New description')
+    expect(props.onConfirm).not.toHaveBeenCalled()
     expect(otherRow.props.onGenerate).not.toHaveBeenCalled()
     expect(event.stopPropagation).toHaveBeenCalledOnce()
   })
@@ -195,7 +193,7 @@ describe('joined generation actions', () => {
     await Promise.resolve()
 
     expect(props.onGenerate).toHaveBeenCalledExactlyOnceWith(props.component)
-    expect(props.onConfirm).toHaveBeenCalledExactlyOnceWith('set', 'New description')
+    expect(props.onConfirm).not.toHaveBeenCalled()
     expect(props.onGenerateComponentSet).not.toHaveBeenCalled()
     expect(props.onSelect).not.toHaveBeenCalled()
     expect(props.onToggleExpand).not.toHaveBeenCalled()

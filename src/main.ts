@@ -230,7 +230,7 @@ function initPlugin(scope: Scope) {
     }
   })
 
-  on<ExportImageHandler>('EXPORT_IMAGE', async ({ id }) => {
+  on<ExportImageHandler>('EXPORT_IMAGE', async ({ id, requestId }) => {
     try {
       const node = await figma.getNodeByIdAsync(id)
       if (node && 'exportAsync' in node) {
@@ -240,13 +240,13 @@ function initPlugin(scope: Scope) {
         })
         // Convert Uint8Array to base64
         const base64 = figma.base64Encode(bytes)
-        emit<ImageExportedHandler>('IMAGE_EXPORTED', { id, imageBase64: base64 })
+        emit<ImageExportedHandler>('IMAGE_EXPORTED', { id, requestId, imageBase64: base64 })
       } else {
-        emit<ImageExportedHandler>('IMAGE_EXPORTED', { id, imageBase64: null })
+        emit<ImageExportedHandler>('IMAGE_EXPORTED', { id, requestId, imageBase64: null })
       }
     } catch (error) {
       console.error('Failed to export image:', error)
-      emit<ImageExportedHandler>('IMAGE_EXPORTED', { id, imageBase64: null })
+      emit<ImageExportedHandler>('IMAGE_EXPORTED', { id, requestId, imageBase64: null })
     }
   })
 

@@ -7,6 +7,7 @@ import { groupComponentRows } from '../utils/componentGroups'
 import { isIconModeEnabled } from '../utils/icon'
 import styles from '../ui.css'
 import { isDescriptionEmpty } from '../utils/text'
+import { GenerationError } from '../services/generationRunner'
 import { ComponentRow } from './ComponentRow'
 
 interface ComponentListProps {
@@ -24,20 +25,18 @@ interface ComponentListProps {
   scope: Scope
   showVariants: boolean
   isModalOpen?: boolean
-  onGenerate: (component: ComponentData) => Promise<string>
+  onGenerate: (component: ComponentData) => Promise<void>
   onGenerateComponentSet: (component: ComponentData) => Promise<void>
-  onGenerated: (id: string) => void
   onConfirm: (id: string, description: string) => void
-  onReject: (id: string) => void
   onRevert: (id: string) => void
   isGenerating: boolean
-  rowErrors: Record<string, string | undefined>
+  rowErrors: Record<string, GenerationError | undefined>
   onSelect: (id: string) => void
   iconOverrides: Record<string, boolean>
   onDisableIcon: (id: string) => void
   generatedThisSession: Set<string>
   onUpgrade: () => void
-  errorResetVersion: number
+  pendingIds: Set<string>
 }
 
 export function ComponentList({
@@ -49,9 +48,7 @@ export function ComponentList({
   showVariants,
   onGenerate,
   onGenerateComponentSet,
-  onGenerated,
   onConfirm,
-  onReject,
   onRevert,
   isGenerating,
   rowErrors,
@@ -60,7 +57,7 @@ export function ComponentList({
   onDisableIcon,
   generatedThisSession,
   onUpgrade,
-  errorResetVersion
+  pendingIds
 }: ComponentListProps) {
   const [collapsedPages, setCollapsedPages] = useState<Set<string>>(new Set())
   const [collapsedVariantGroups, setCollapsedVariantGroups] = useState<Set<string>>(new Set())
@@ -140,9 +137,7 @@ export function ComponentList({
         isHidden={isHidden}
         onGenerate={onGenerate}
         onGenerateComponentSet={onGenerateComponentSet}
-        onGenerated={onGenerated}
         onConfirm={onConfirm}
-        onReject={onReject}
         onRevert={onRevert}
         onSelect={onSelect}
         isGenerating={isGenerating}
@@ -153,7 +148,7 @@ export function ComponentList({
         onDisableIcon={onDisableIcon}
         wasGeneratedThisSession={generatedThisSession.has(component.id)}
         onUpgrade={onUpgrade}
-        errorResetVersion={errorResetVersion}
+        isPending={pendingIds.has(component.id)}
       />
     )
   }

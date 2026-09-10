@@ -8,8 +8,6 @@ import {
   ComponentData,
   ComponentsLoadedHandler,
   DescriptionAppliedHandler,
-  ExportImageHandler,
-  ImageExportedHandler,
   StartCheckoutHandler,
   LoadComponentsHandler,
   LoadSettingsHandler,
@@ -21,7 +19,6 @@ import {
   SelectComponentHandler
 } from '../types'
 import {
-  QuotaExceededError,
   DEFAULT_PROMPT,
   DEFAULT_VARIANT_PROMPT,
   DEFAULT_ICON_PROMPT
@@ -30,6 +27,8 @@ import { GenerationBatch, getComponentSetMembers, getGenerationBatches } from '.
 import { isIconModeEnabled } from '../utils/icon'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { usePaymentSession } from '../hooks/usePaymentSession'
+import { createGenerationRunner, GenerationError, idleGeneration } from '../services/generationRunner'
+import { createComponentImageExporter } from '../services/componentImage'
 import { Header } from './Header'
 import { SettingsModal } from './SettingsModal'
 import { ComponentList } from './ComponentList'
@@ -41,10 +40,6 @@ interface AppProps {
 
 const DEFAULT_SETTINGS = createDefaultSettings()
 
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AbortError'
-}
-
 export function App({ scope, currentPageName }: AppProps) {
   const [components, setComponents] = useState<ComponentData[]>([])
   const [loadedPageName, setLoadedPageName] = useState(currentPageName)
@@ -53,34 +48,19 @@ export function App({ scope, currentPageName }: AppProps) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [isGeneratingAll, setIsGeneratingAll] = useState(false)
-  const [generatingPageId, setGeneratingPageId] = useState<string | null>(null)
+  const [images] = useState(createComponentImageExporter)
+  useEffect(() => () => images.dispose(), [images])
+  const [generation, setGeneration] = useState(idleGeneration)
+  const isGenerating = generation.total > 0
   const [generatedThisSession, setGeneratedThisSession] = useState<Set<string>>(new Set())
-  const [generateProgress, setGenerateProgress] = useState({ current: 0, total: 0 })
-  const [rowErrors, setRowErrors] = useState<Record<string, string | undefined>>({})
+  const [rowErrors, setRowErrors] = useState<Record<string, GenerationError | undefined>>({})
   const [headerNotice, setHeaderNotice] = useState<string | null>(null)
-  const [errorResetVersion, setErrorResetVersion] = useState(0)
   const [iconOverrides, setIconOverrides] = useState<Record<string, boolean>>({})
-  const abortGenerateAllRef = useRef(false)
-  const generateAllAbortControllerRef = useRef<AbortController | null>(null)
-  // BUG-001 fix: Map of resolvers keyed by component ID instead of single ref
-  const imageExportResolvers = useRef<Map<string, (value: string | null) => void>>(new Map())
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const { session: payments, usageState } = usePaymentSession(() => {
     setHeaderNotice(null)
     setRowErrors({})
-    setErrorResetVersion(version => version + 1)
   })
-  const CONCURRENCY_LIMIT = 3
-
-  // Helper to export component image and wait for result
-  const exportComponentImage = useCallback((componentId: string): Promise<string | null> => {
-    return new Promise((resolve) => {
-      imageExportResolvers.current.set(componentId, resolve)
-      emit<ExportImageHandler>('EXPORT_IMAGE', { id: componentId })
-    })
-  }, [])
-
   // Load initial data and the current Figma payment identity.
   useEffect(() => {
     const unsubscribeComponents = on<ComponentsLoadedHandler>(
@@ -118,21 +98,9 @@ export function App({ scope, currentPageName }: AppProps) {
       ({ id, success }) => {
         if (!success) {
           console.error(`Failed to apply description for component ${id}`)
-          setRowErrors((prev) => ({ ...prev, [id]: 'Failed to apply description to canvas' }))
+          setRowErrors((prev) => ({ ...prev, [id]: { message: 'Failed to apply description to canvas' } }))
         } else {
           setRowErrors((prev) => ({ ...prev, [id]: undefined }))
-        }
-      }
-    )
-
-    // BUG-001 fix: resolve by component ID from the Map
-    const unsubscribeImageExported = on<ImageExportedHandler>(
-      'IMAGE_EXPORTED',
-      ({ id, imageBase64 }) => {
-        const resolve = imageExportResolvers.current.get(id)
-        if (resolve) {
-          resolve(imageBase64)
-          imageExportResolvers.current.delete(id)
         }
       }
     )
@@ -145,12 +113,11 @@ export function App({ scope, currentPageName }: AppProps) {
       unsubscribeSettings()
       unsubscribeSettingsSaved()
       unsubscribeDescriptionApplied()
-      unsubscribeImageExported()
     }
   }, [])
 
   const handleRefreshComponents = useCallback(() => {
-    if (isRefreshing || isGeneratingAll) {
+    if (isRefreshing || isGenerating) {
       return
     }
 
@@ -158,7 +125,7 @@ export function App({ scope, currentPageName }: AppProps) {
     setRowErrors({})
     setHeaderNotice(null)
     emit<LoadComponentsHandler>('LOAD_COMPONENTS')
-  }, [isRefreshing, isGeneratingAll])
+  }, [isRefreshing, isGenerating])
 
   const markGeneratedThisSession = useCallback((id: string) => {
     setGeneratedThisSession((previous) => {
@@ -209,12 +176,12 @@ export function App({ scope, currentPageName }: AppProps) {
   }
 
   const handleGenerate = useCallback(
-    async (component: ComponentData, abortSignal?: AbortSignal): Promise<string> => {
+    async (component: ComponentData, abortSignal: AbortSignal): Promise<string> => {
       const isIcon = isIconModeEnabled(component.isIcon, iconOverrides[component.id])
       let imageBase64: string | undefined
 
       if (settings.includeImage || isIcon) {
-        const image = await exportComponentImage(component.id)
+        const image = await images.export(component.id, abortSignal)
         if (image) {
           imageBase64 = image
         }
@@ -232,11 +199,9 @@ export function App({ scope, currentPageName }: AppProps) {
         variantContext: component.variantContext,
         abortSignal
       }
-      const description = await payments.generate(input)
-      setHeaderNotice(null)
-      return description
+      return payments.generate(input)
     },
-    [settings, exportComponentImage, iconOverrides, payments]
+    [settings, iconOverrides, payments, images]
   )
 
   const handleDisableIcon = useCallback((componentId: string) => {
@@ -253,14 +218,6 @@ export function App({ scope, currentPageName }: AppProps) {
       return newOverrides
     })
   }, [components, settings])
-
-  // Wrapper for ComponentRow that expects just description string
-  const handleGenerateForRow = useCallback(
-    async (component: ComponentData): Promise<string> => {
-      return handleGenerate(component)
-    },
-    [handleGenerate]
-  )
 
   const handleConfirm = useCallback((id: string, description: string) => {
     emit<ApplyDescriptionHandler>('APPLY_DESCRIPTION', { id, description })
@@ -280,37 +237,37 @@ export function App({ scope, currentPageName }: AppProps) {
     setRowErrors((prev) => ({ ...prev, [id]: undefined }))
   }, [])
 
-  const handleGenerateComponentSet = useCallback(async (componentSet: ComponentData): Promise<void> => {
-    const members = getComponentSetMembers(components, componentSet, settings.showVariants)
-    const failures: string[] = []
+  const [runner] = useState(() => createGenerationRunner({
+    onChange: setGeneration,
+    onStart: ids => {
+      setHeaderNotice(null)
+      setRowErrors(previous => {
+        const next = { ...previous }
+        ids.forEach(id => { delete next[id] })
+        return next
+      })
+    },
+    onResult: (component, description) => {
+      markGeneratedThisSession(component.id)
+      handleConfirm(component.id, description)
+    },
+    onError: (id, error) => setRowErrors(previous => ({ ...previous, [id]: error })),
+    onQuotaExceeded: setHeaderNotice,
+  }))
+  useEffect(() => () => runner.cancel(), [runner])
 
-    for (const member of members) {
-      try {
-        const description = await handleGenerate(member)
-        markGeneratedThisSession(member.id)
-        handleConfirm(member.id, description)
-      } catch (error) {
-        if (error instanceof QuotaExceededError) {
-          setHeaderNotice(error.message)
-          return
-        }
-        console.error(`Failed to generate for ${member.name}:`, error)
-        failures.push(member.name)
-        setRowErrors((prev) => ({
-          ...prev,
-          [member.id]: error instanceof Error ? error.message : 'Generation failed'
-        }))
-      }
-    }
+  const handleGenerateBatches = useCallback((batches: GenerationBatch[], pageId?: string) => {
+    if (isRefreshing) return Promise.resolve()
+    return runner.run(batches, handleGenerate, pageId)
+  }, [isRefreshing, runner, handleGenerate])
 
-    if (failures.length > 0) {
-      throw new Error(`Failed to generate: ${failures.join(', ')}`)
-    }
-  }, [components, settings.showVariants, handleGenerate, markGeneratedThisSession, handleConfirm])
+  const handleGenerateForRow = useCallback((component: ComponentData) => (
+    handleGenerateBatches([{ members: [component] }])
+  ), [handleGenerateBatches])
 
-  const handleReject = useCallback((id: string) => {
-    // Reset is handled in ComponentRow
-  }, [])
+  const handleGenerateComponentSet = useCallback((componentSet: ComponentData) => (
+    handleGenerateBatches([{ members: getComponentSetMembers(components, componentSet, settings.showVariants) }])
+  ), [components, settings.showVariants, handleGenerateBatches])
 
   const handleRevert = useCallback((id: string) => {
     const target = components.find((c) => c.id === id)
@@ -351,95 +308,6 @@ export function App({ scope, currentPageName }: AppProps) {
     emit<SaveSettingsHandler>('SAVE_SETTINGS', defaults)
   }, [])
 
-  const handleGenerateBatches = useCallback(async (batchesToGenerate: GenerationBatch[], pageId?: string) => {
-    if (isRefreshing || generateAllAbortControllerRef.current) return
-
-    const totalToGenerate = batchesToGenerate.reduce((count, batch) => count + batch.members.length, 0)
-    if (totalToGenerate === 0) return
-
-    setIsGeneratingAll(true)
-    setGeneratingPageId(pageId ?? null)
-    abortGenerateAllRef.current = false
-    const abortController = new AbortController()
-    generateAllAbortControllerRef.current = abortController
-
-    setGenerateProgress({ current: 0, total: totalToGenerate })
-
-    let completed = 0
-
-    // BUG-002 fix: queue-based approach instead of shared index. Component sets
-    // remain atomic jobs while their members are generated sequentially.
-    const queue = [...batchesToGenerate]
-
-    const processBatch = async (batch: typeof batchesToGenerate[number]) => {
-      for (const component of batch.members) {
-        if (abortGenerateAllRef.current) return
-
-        try {
-          const description = await handleGenerate(component, abortController.signal)
-
-          // Cancel drops results even if the provider already returned.
-          if (abortGenerateAllRef.current) return
-
-          markGeneratedThisSession(component.id)
-          emit<ApplyDescriptionHandler>('APPLY_DESCRIPTION', {
-            id: component.id,
-            description
-          })
-
-          setComponents((prev) =>
-            prev.map((c) =>
-              c.id === component.id
-                ? {
-                    ...c,
-                    previousDescription: c.currentDescription,
-                    currentDescription: description
-                  }
-                : c
-            )
-          )
-
-          setRowErrors((prev) => ({ ...prev, [component.id]: undefined }))
-        } catch (error) {
-          if (abortGenerateAllRef.current || isAbortError(error)) {
-            return
-          }
-          if (error instanceof QuotaExceededError) {
-            setHeaderNotice(error.message)
-            abortGenerateAllRef.current = true
-            abortController.abort()
-            return
-          }
-          console.error(`Failed to generate for ${component.name}:`, error)
-          setRowErrors((prev) => ({
-            ...prev,
-            [component.id]: error instanceof Error ? error.message : 'Generation failed'
-          }))
-        } finally {
-          completed += 1
-          setGenerateProgress({ current: completed, total: totalToGenerate })
-        }
-      }
-    }
-
-    const runWorker = async () => {
-      while (!abortGenerateAllRef.current) {
-        const batch = queue.shift()
-        if (!batch) break
-        await processBatch(batch)
-      }
-    }
-
-    const workerCount = Math.min(CONCURRENCY_LIMIT, batchesToGenerate.length || 1)
-    await Promise.all(Array.from({ length: workerCount }, runWorker))
-
-    setIsGeneratingAll(false)
-    setGeneratingPageId(null)
-    setGenerateProgress({ current: 0, total: 0 })
-    abortGenerateAllRef.current = false
-    generateAllAbortControllerRef.current = null
-  }, [isRefreshing, handleGenerate, markGeneratedThisSession])
-
   const handleUpgrade = useCallback(() => {
     emit<StartCheckoutHandler>('START_CHECKOUT')
   }, [])
@@ -453,11 +321,6 @@ export function App({ scope, currentPageName }: AppProps) {
     return handleGenerateBatches(batches, pageId)
   }, [components, filteredComponents, settings.overwriteExisting, settings.showVariants, handleGenerateBatches])
 
-  const handleCancelGenerateAll = useCallback(() => {
-    abortGenerateAllRef.current = true
-    generateAllAbortControllerRef.current?.abort()
-  }, [])
-
   // Close Settings with Escape
   const handleCloseModal = useCallback(() => {
     if (isSettingsOpen) {
@@ -469,7 +332,7 @@ export function App({ scope, currentPageName }: AppProps) {
   useKeyboardShortcuts(
     {
       onGenerateAll: () => {
-        if (!isGeneratingAll) {
+        if (!isGenerating) {
           handleGenerateAll()
         }
       },
@@ -512,15 +375,15 @@ export function App({ scope, currentPageName }: AppProps) {
         onSearchChange={setSearchValue}
         onSettingsClick={() => setIsSettingsOpen(true)}
         onGenerateAllClick={handleGenerateAll}
-        onCancelClick={handleCancelGenerateAll}
+        onCancelClick={runner.cancel}
         onRefreshClick={handleRefreshComponents}
         refreshTitle={scope === 'current-page' ? 'Rescan this page' : 'Rescan entire file'}
         scopeLabel={scope === 'current-page' ? 'This page' : 'Entire file'}
         pageName={scope === 'current-page' ? loadedPageName : undefined}
         overwriteExisting={settings.overwriteExisting}
-        isGenerating={isGeneratingAll}
+        isGenerating={isGenerating}
         isRefreshing={isRefreshing}
-        progress={generateProgress}
+        progress={generation}
         generateCount={generateCount}
         searchInputRef={searchInputRef}
         usageState={usageState}
@@ -532,12 +395,12 @@ export function App({ scope, currentPageName }: AppProps) {
         components={filteredComponents}
         pageGeneration={scope === 'all-pages' ? {
           counts: pageGenerationCounts,
-          activePageId: generatingPageId,
-          progress: generateProgress,
+          activePageId: generation.pageId,
+          progress: generation,
           overwriteExisting: settings.overwriteExisting,
           isRefreshing,
           onGenerate: handleGeneratePage,
-          onCancel: handleCancelGenerateAll,
+          onCancel: runner.cancel,
         } : undefined}
         showVariants={settings.showVariants}
         searchValue={searchValue}
@@ -545,20 +408,18 @@ export function App({ scope, currentPageName }: AppProps) {
         isModalOpen={isSettingsOpen}
         onGenerate={handleGenerateForRow}
         onGenerateComponentSet={handleGenerateComponentSet}
-        onGenerated={markGeneratedThisSession}
         onConfirm={handleConfirm}
-        onReject={handleReject}
         onRevert={handleRevert}
         onSelect={(id) => {
           emit<SelectComponentHandler>('SELECT_COMPONENT', { id })
         }}
-        isGenerating={isGeneratingAll}
+        isGenerating={isGenerating}
         rowErrors={rowErrors}
         iconOverrides={iconOverrides}
         onDisableIcon={handleDisableIcon}
         generatedThisSession={generatedThisSession}
         onUpgrade={handleUpgrade}
-        errorResetVersion={errorResetVersion}
+        pendingIds={generation.pendingIds}
       />
 
       <SettingsModal

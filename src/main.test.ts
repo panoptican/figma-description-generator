@@ -202,12 +202,12 @@ describe('dynamic page access', () => {
     currentPage()
     const exportAsync = vi.fn().mockResolvedValue(new Uint8Array([1]))
     api.getNodeByIdAsync.mockResolvedValue({ exportAsync })
-    await handlers.get('EXPORT_IMAGE')!({ id: 'component' })
+    await handlers.get('EXPORT_IMAGE')!({ id: 'component', requestId: 1 })
     expect(exportAsync).toHaveBeenCalled()
-    expect(emit).toHaveBeenCalledWith('IMAGE_EXPORTED', { id: 'component', imageBase64: 'image' })
+    expect(emit).toHaveBeenCalledWith('IMAGE_EXPORTED', { id: 'component', requestId: 1, imageBase64: 'image' })
     api.getNodeByIdAsync.mockRejectedValue(new Error('Unavailable'))
-    await handlers.get('EXPORT_IMAGE')!({ id: 'missing' })
-    expect(emit).toHaveBeenCalledWith('IMAGE_EXPORTED', { id: 'missing', imageBase64: null })
+    await handlers.get('EXPORT_IMAGE')!({ id: 'missing', requestId: 2 })
+    expect(emit).toHaveBeenCalledWith('IMAGE_EXPORTED', { id: 'missing', requestId: 2, imageBase64: null })
   })
 
   it('gets the Figma payment token and status in the main thread', async () => {
