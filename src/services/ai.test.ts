@@ -109,9 +109,9 @@ describe('buildPrompt', () => {
         ]
       )
 
-      expect(result).toContain('Complete variant set context:')
-      expect(result).toContain('- value=0: value=0')
-      expect(result).toContain('- value=40: value=40')
+      expect(result).toContain('Complete variant set context (names only):')
+      expect(result).toContain('- value=0')
+      expect(result).toContain('- value=40')
     })
 
     it('includes variant set context when describing the component set parent', () => {
@@ -129,9 +129,9 @@ describe('buildPrompt', () => {
         ]
       )
 
-      expect(result).toContain('Complete variant set context:')
-      expect(result).toContain('- value=0: value=0')
-      expect(result).toContain('- value=40: value=40')
+      expect(result).toContain('Complete variant set context (names only):')
+      expect(result).toContain('- value=0')
+      expect(result).toContain('- value=40')
     })
   })
 
@@ -173,7 +173,7 @@ describe('buildPrompt', () => {
       expect(DEFAULT_ICON_PROMPT).toContain('{parentName}')
     })
 
-    it('does not append variant-set context to icon prompts', () => {
+    it('includes sibling names as text context for icon variants', () => {
       const result = buildPrompt(
         'value=40',
         'VARIANT',
@@ -185,7 +185,8 @@ describe('buildPrompt', () => {
         [{ name: 'value=40', properties: ['value=40'] }]
       )
 
-      expect(result).not.toContain('Complete variant set context:')
+      expect(result).toContain('Complete variant set context (names only):')
+      expect(result).toContain('- value=40')
     })
   })
 
@@ -274,6 +275,30 @@ describe('generateDescription', () => {
     const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string)
     expect(body.imageBase64).toBe('abc123')
     expect(body.prompt).toContain('Icon name: Arrow')
+  })
+
+  it.each([false, true])('sends one selected image and sibling names as text, icon mode=%s', async (isIcon) => {
+    const fetch = vi.fn().mockResolvedValue(serviceResponse({ description: 'Selected item description.' }))
+    vi.stubGlobal('fetch', fetch)
+    await generateDescription({
+      componentName: 'State=Focused', componentType: 'VARIANT', properties: ['State=Focused'],
+      parentName: 'Slider', imageBase64: 'selected-image', paymentToken: 'fixture-token',
+      iconOptions: { isIcon, customIconPrompt: 'Name {icon_name}' },
+      customVariantPrompt: 'Describe {name}',
+      variantContext: [
+        { name: 'State=Default', properties: ['redundant parsed property'] },
+        { name: 'State=Focused', properties: ['State=Focused'] },
+        { name: 'State=Disabled', properties: ['State=Disabled'] },
+      ],
+    })
+    expect(fetch).toHaveBeenCalledOnce()
+    const body = JSON.parse(fetch.mock.calls[0][1].body)
+    expect(body.imageBase64).toBe('selected-image')
+    expect(Object.keys(body).sort()).toEqual(['imageBase64', 'paymentToken', 'prompt'])
+    expect(body.prompt).toContain('Parent component: Slider')
+    expect(body.prompt).toContain('- State=Default\n- State=Focused\n- State=Disabled')
+    expect(body.prompt).not.toContain('redundant parsed property')
+    expect(body.prompt).toContain("Return only the requested item's description")
   })
 
   it('sends the Figma payment token', async () => {

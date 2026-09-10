@@ -27,6 +27,7 @@ import { GenerationBatch, getComponentSetMembers, getGenerationBatches } from '.
 import { isIconModeEnabled } from '../utils/icon'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { usePaymentSession } from '../hooks/usePaymentSession'
+import { useGenerationCooldown } from '../hooks/useGenerationCooldown'
 import { createGenerationRunner, GenerationError, idleGeneration } from '../services/generationRunner'
 import { createComponentImageExporter } from '../services/componentImage'
 import { Header } from './Header'
@@ -53,6 +54,7 @@ export function App({ scope, currentPageName }: AppProps) {
   const [generation, setGeneration] = useState(idleGeneration)
   const isGenerating = generation.total > 0
   const [generatedThisSession, setGeneratedThisSession] = useState<Set<string>>(new Set())
+  const cooldown = useGenerationCooldown()
   const [rowErrors, setRowErrors] = useState<Record<string, GenerationError | undefined>>({})
   const [headerNotice, setHeaderNotice] = useState<string | null>(null)
   const [iconOverrides, setIconOverrides] = useState<Record<string, boolean>>({})
@@ -169,9 +171,15 @@ export function App({ scope, currentPageName }: AppProps) {
   const generationBatches = getGenerationBatches(components, filteredComponents, settings.overwriteExisting, settings.showVariants)
   const generateCount = generationBatches.reduce((count, batch) => count + batch.members.length, 0)
   const pageGenerationCounts = new Map<string, number>()
+  const coolingDownPages = new Set<string>()
+  const coolingDownSets = new Set<string>()
+  for (const component of components) {
+    if (cooldown.ids.has(component.id)) coolingDownSets.add(component.parentId || component.id)
+  }
   for (const batch of generationBatches) {
     for (const member of batch.members) {
       pageGenerationCounts.set(member.pageId, (pageGenerationCounts.get(member.pageId) || 0) + 1)
+      if (cooldown.ids.has(member.id)) coolingDownPages.add(member.pageId)
     }
   }
 
@@ -220,6 +228,7 @@ export function App({ scope, currentPageName }: AppProps) {
   }, [components, settings])
 
   const handleConfirm = useCallback((id: string, description: string) => {
+    clearGeneratedThisSession(id)
     emit<ApplyDescriptionHandler>('APPLY_DESCRIPTION', { id, description })
 
     // Update local state
@@ -235,7 +244,7 @@ export function App({ scope, currentPageName }: AppProps) {
       )
     )
     setRowErrors((prev) => ({ ...prev, [id]: undefined }))
-  }, [])
+  }, [clearGeneratedThisSession])
 
   const [runner] = useState(() => createGenerationRunner({
     onChange: setGeneration,
@@ -248,8 +257,9 @@ export function App({ scope, currentPageName }: AppProps) {
       })
     },
     onResult: (component, description) => {
-      markGeneratedThisSession(component.id)
       handleConfirm(component.id, description)
+      markGeneratedThisSession(component.id)
+      cooldown.start(component.id)
     },
     onError: (id, error) => setRowErrors(previous => ({ ...previous, [id]: error })),
     onQuotaExceeded: setHeaderNotice,
@@ -257,9 +267,9 @@ export function App({ scope, currentPageName }: AppProps) {
   useEffect(() => () => runner.cancel(), [runner])
 
   const handleGenerateBatches = useCallback((batches: GenerationBatch[], pageId?: string) => {
-    if (isRefreshing) return Promise.resolve()
+    if (isRefreshing || cooldown.includes(batches.flatMap(batch => batch.members.map(member => member.id)))) return Promise.resolve()
     return runner.run(batches, handleGenerate, pageId)
-  }, [isRefreshing, runner, handleGenerate])
+  }, [isRefreshing, runner, handleGenerate, cooldown.includes])
 
   const handleGenerateForRow = useCallback((component: ComponentData) => (
     handleGenerateBatches([{ members: [component] }])
@@ -383,6 +393,7 @@ export function App({ scope, currentPageName }: AppProps) {
         overwriteExisting={settings.overwriteExisting}
         isGenerating={isGenerating}
         isRefreshing={isRefreshing}
+        isCoolingDown={coolingDownPages.size > 0}
         progress={generation}
         generateCount={generateCount}
         searchInputRef={searchInputRef}
@@ -399,6 +410,7 @@ export function App({ scope, currentPageName }: AppProps) {
           progress: generation,
           overwriteExisting: settings.overwriteExisting,
           isRefreshing,
+          coolingDownPages,
           onGenerate: handleGeneratePage,
           onCancel: runner.cancel,
         } : undefined}
@@ -418,6 +430,8 @@ export function App({ scope, currentPageName }: AppProps) {
         iconOverrides={iconOverrides}
         onDisableIcon={handleDisableIcon}
         generatedThisSession={generatedThisSession}
+        coolingDownIds={cooldown.ids}
+        coolingDownSets={coolingDownSets}
         onUpgrade={handleUpgrade}
         pendingIds={generation.pendingIds}
       />

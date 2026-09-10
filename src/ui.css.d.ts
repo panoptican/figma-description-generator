@@ -8,6 +8,12 @@ declare const styles: {
   readonly "componentVariant": string;
   readonly "componentVariants": string;
   readonly "descriptionInput": string;
+  readonly "generationButtons": string;
+  readonly "generationCost": string;
+  readonly "generationFooter": string;
+  readonly "generationOptions": string;
+  readonly "generationOptionsPanel": string;
+  readonly "generationSuccess": string;
   readonly "joinedGenerate": string;
   readonly "joinedGenerateButton": string;
   readonly "pageGenerateButton": string;

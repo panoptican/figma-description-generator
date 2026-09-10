@@ -30,7 +30,7 @@
 
 .stickyComponentRow > .rowHeader {
   min-height: 40px;
-  padding: 7px 16px;
+  padding: 7px 16px 7px 36px;
 }
 
 .stickyComponentRow > .rowHeader .rowHeaderButton > span:first-child {
@@ -40,7 +40,7 @@
 }
 
 .stickyComponentRow > .rowEditor {
-  padding: 0 16px 16px;
+  padding: 0 16px 16px 36px;
 }
 
 .componentPageRows {
@@ -81,12 +81,12 @@
 
 .componentRow {
   position: relative;
-  padding: 16px;
+  padding: 16px 16px 16px 36px;
   background-color: var(--figma-color-bg-secondary);
 }
 
 .componentRowCollapsed {
-  padding: 10px 16px;
+  padding: 10px 16px 10px 36px;
 }
 
 .componentRowCollapsed:hover {
@@ -180,47 +180,117 @@
   outline-offset: 1px;
 }
 
+.generationFooter,
+.generationButtons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.generationFooter {
+  margin-top: 8px;
+}
+
+.generationSuccess {
+  margin-right: auto;
+  color: var(--figma-color-text-secondary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .joinedGenerate {
   display: inline-flex;
-  flex-shrink: 0;
-  gap: 0;
 }
 
 .joinedGenerate > div {
   display: block;
 }
 
-.joinedGenerateButton {
+.joinedGenerate .joinedGenerateButton {
   min-width: 108px;
   white-space: nowrap;
-}
-
-.joinedGenerate > div + div .joinedGenerateButton {
-  min-width: 122px;
-  margin-left: -1px;
-  border-left-color: color-mix(in srgb, var(--figma-color-text-onbrand) 35%, transparent);
-  border-radius: 0 var(--border-radius-6) var(--border-radius-6) 0;
-}
-
-.joinedGenerate > div:first-child .joinedGenerateButton {
   border-radius: var(--border-radius-6) 0 0 var(--border-radius-6);
 }
 
-.joinedGenerate > div:focus-within {
-  z-index: 2;
-}
-
-.joinedGenerate .joinedGenerateButton:not(:disabled):hover {
-  background-color: var(--figma-color-bg-brand-hover);
-}
-
-.joinedGenerate .joinedGenerateButton:not(:disabled):active {
-  background-color: var(--figma-color-bg-brand-pressed);
-}
-
-.joinedGenerate > div:first-child .joinedGenerateButton:focus-visible::before,
-.joinedGenerate > div:last-child .joinedGenerateButton:focus-visible::before {
+.joinedGenerateButton:focus-visible::before {
   border-radius: inherit;
+}
+
+.generationOptions {
+  position: relative;
+}
+
+.generationOptions > summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 100%;
+  min-height: var(--space-24, 24px);
+  border-left: 1px solid color-mix(in srgb, var(--figma-color-text-onbrand) 35%, transparent);
+  border-radius: 0 var(--border-radius-6) var(--border-radius-6) 0;
+  background-color: var(--figma-color-bg-brand);
+  color: var(--figma-color-text-onbrand);
+  cursor: pointer;
+  list-style: none;
+}
+
+.generationOptions > summary::-webkit-details-marker {
+  display: none;
+}
+
+.generationOptions > summary:hover {
+  background-color: var(--figma-color-bg-brand-hover, var(--figma-color-bg-brand));
+}
+
+.generationOptions > summary:focus-visible {
+  outline: 1px solid var(--figma-color-border-selected);
+  outline-offset: 2px;
+}
+
+.generationOptionsPanel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 4;
+  width: 242px;
+  padding: 4px;
+  border: 1px solid var(--figma-color-border);
+  border-radius: 6px;
+  background-color: var(--figma-color-bg);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 18%);
+}
+
+.generationOptionsPanel > button {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--figma-color-text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.generationOptionsPanel > button:hover:not(:disabled),
+.generationOptionsPanel > button:focus-visible {
+  background-color: var(--figma-color-bg-secondary);
+  outline: 1px solid var(--figma-color-border-selected);
+}
+
+.generationOptionsPanel > button:disabled {
+  color: var(--figma-color-text-disabled);
+  cursor: not-allowed;
+}
+
+.generationCost {
+  font-size: 11px;
+  color: var(--figma-color-text-secondary);
 }
 
 .rowFeedback {
@@ -281,7 +351,7 @@
   justify-content: space-between;
   gap: 12px;
   min-height: 40px;
-  padding: 7px 16px;
+  padding: 7px 16px 7px 36px;
   color: var(--figma-color-text);
   font-size: 12px;
   font-weight: 600;

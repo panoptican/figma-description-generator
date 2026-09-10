@@ -17,6 +17,7 @@ interface HeaderProps {
   overwriteExisting: boolean
   isGenerating: boolean
   isRefreshing: boolean
+  isCoolingDown?: boolean
   progress: { current: number; total: number }
   generateCount: number
   searchInputRef?: Ref<HTMLInputElement>
@@ -38,6 +39,7 @@ export function Header({
   overwriteExisting,
   isGenerating,
   isRefreshing,
+  isCoolingDown = false,
   progress,
   generateCount,
   searchInputRef,
@@ -45,11 +47,13 @@ export function Header({
   notice,
   onUpgrade
 }: HeaderProps) {
-  const canGenerateAll = generateCount > 0
+  const canGenerateAll = generateCount > 0 && !isCoolingDown
   const generateLabel = overwriteExisting
     ? `Replace ${generateCount}`
     : `Fill ${generateCount}`
-  const generateTitle = generateCount === 0
+  const generateTitle = isCoolingDown
+    ? 'Just generated. Available again in a moment.'
+    : generateCount === 0
       ? overwriteExisting
         ? 'Nothing to replace'
         : 'Nothing to fill'

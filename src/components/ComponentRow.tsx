@@ -27,6 +27,8 @@ interface ComponentRowProps {
   isIcon: boolean
   onDisableIcon: (id: string) => void
   wasGeneratedThisSession: boolean
+  isCoolingDown?: boolean
+  isSetCoolingDown?: boolean
   onUpgrade: () => void
   isPending: boolean
 }
@@ -56,6 +58,8 @@ export function ComponentRow({
   isIcon,
   onDisableIcon,
   wasGeneratedThisSession,
+  isCoolingDown = false,
+  isSetCoolingDown = false,
   onUpgrade,
   isPending
 }: ComponentRowProps) {
@@ -69,6 +73,17 @@ export function ComponentRow({
   const componentIdRef = useRef(component.id)
   const rowElementRef = useRef<HTMLDivElement | null>(null)
   const toggleFocusFrameRef = useRef<number | null>(null)
+  const generationOptionsRef = useRef<HTMLDetailsElement | null>(null)
+
+  useEffect(() => {
+    if (!isExpanded || isHidden || component.type !== 'COMPONENT_SET' || !showVariants) return
+    const closeOptions = (event: PointerEvent) => {
+      const options = generationOptionsRef.current
+      if (options && !options.contains(event.target as Node)) options.open = false
+    }
+    document.addEventListener('pointerdown', closeOptions)
+    return () => document.removeEventListener('pointerdown', closeOptions)
+  }, [isExpanded, isHidden, component.type, showVariants])
 
   descriptionRef.current = description
   isDirtyRef.current = isDirty
@@ -132,6 +147,12 @@ export function ComponentRow({
           ? 'Unsaved changes'
           : null
   const relationshipLabel = component.type === 'COMPONENT_SET' && !variantsControl ? 'Component set' : ''
+  const canGenerate = !isGenerating && !isCoolingDown
+  const hasVariants = component.type === 'COMPONENT_SET' && showVariants && (component.variantContext?.length || 0) > 0
+  const generationLabel = isPending ? 'Generating…' : isCoolingDown && wasGeneratedThisSession ? '✓ Generated' : isEmpty ? 'Generate description' : 'Regenerate'
+  const generationTitle = isCoolingDown
+    ? 'Just generated. Available again in a moment.'
+    : `${isEmpty ? 'Generate' : 'Replace'} this description. Uses 1 description.${component.type === 'VARIANT' ? ' Includes sibling names as text context; images of siblings are not sent.' : ''}`
 
   function handleTitleActivation(e: MouseEvent) {
     e.stopPropagation()
@@ -153,7 +174,7 @@ export function ComponentRow({
 
     handleRowKeyboardShortcut(event, {
       onGenerate: () => {
-        if (!isGenerating) void onGenerate(component)
+        if (canGenerate) void onGenerate(component)
       },
       onRevert: () => {
         if (component.previousDescription !== undefined) onRevert(component.id)
@@ -316,56 +337,64 @@ export function ComponentRow({
           </div>
         )}
 
-        {(component.type !== 'VARIANT' || component.previousDescription !== undefined) && (
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              justifyContent: 'flex-end',
-              alignItems: 'center',
-              gap: '8px',
-              marginTop: '8px'
-            }}
-          >
-            {component.type === 'COMPONENT_SET' && showVariants && component.variantContext && component.variantContext.length > 0 ? (
-              <div className={styles.joinedGenerate} role="group" aria-label={`${component.name} generation actions`}>
-                <Button
-                  className={styles.joinedGenerateButton}
-                  onClick={(e: MouseEvent) => {
-                    e.stopPropagation()
-                    void onGenerate(component)
-                  }}
-                  disabled={isGenerating}
-                  aria-label={`Generate a description for ${component.name} only`}
-                  title="Generate a description for this component set only. Replaces its existing description."
-                >
-                  Generate one
-                </Button>
-                <Button
-                  className={styles.joinedGenerateButton}
-                  onClick={(e: MouseEvent) => {
-                    e.stopPropagation()
-                    void onGenerateComponentSet(component)
-                  }}
-                  disabled={isGenerating}
-                  aria-label={`Generate descriptions for ${component.name} and all variants`}
-                  title="Generate descriptions for this component set and all variants. Replaces existing descriptions."
-                >
-                  Set + variants
-                </Button>
-              </div>
-            ) : component.type !== 'VARIANT' && (
+        <div className={styles.generationFooter}>
+          {wasGeneratedThisSession && !isDirty && !isSaving && !externalError && !isPending && (
+            <span className={styles.generationSuccess} role="status">
+              {isCoolingDown ? '✓ Generated just now' : '✓ Generated this session'}
+            </span>
+          )}
+          <div className={styles.generationButtons}>
+            <div className={hasVariants ? styles.joinedGenerate : undefined} role="group" aria-label={`${component.name} generation actions`}>
               <Button
+                className={hasVariants ? styles.joinedGenerateButton : undefined}
                 onClick={(e: MouseEvent) => {
                   e.stopPropagation()
-                  void onGenerate(component)
+                  if (canGenerate) void onGenerate(component)
                 }}
-                disabled={isGenerating}
+                disabled={!canGenerate}
+                title={generationTitle}
               >
-                Generate description
+                {generationLabel}
               </Button>
-            )}
-
+              {hasVariants && (
+                <details
+                  ref={generationOptionsRef}
+                  className={styles.generationOptions}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Escape') return
+                    event.preventDefault()
+                    event.stopPropagation()
+                    event.currentTarget.open = false
+                    event.currentTarget.querySelector('summary')?.focus()
+                  }}
+                  onBlur={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node)) event.currentTarget.open = false
+                  }}
+                >
+                  <summary aria-label={`More generation options for ${component.name}`} title="More generation options">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>
+                  </summary>
+                  <div className={styles.generationOptionsPanel}>
+                    <button
+                      type="button"
+                      disabled={isGenerating || isSetCoolingDown}
+                      title={isSetCoolingDown ? 'Just generated. Available again in a moment.' : 'Replaces the set description and every variant description. Includes each item’s image when image sending is enabled.'}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        if (generationOptionsRef.current) {
+                          generationOptionsRef.current.open = false
+                          generationOptionsRef.current.querySelector('summary')?.focus()
+                        }
+                        if (!isGenerating && !isSetCoolingDown) void onGenerateComponentSet(component)
+                      }}
+                    >
+                      <span>Set + {component.variantContext!.length} {component.variantContext!.length === 1 ? 'variant' : 'variants'}</span>
+                      <span className={styles.generationCost}>{component.variantContext!.length + 1} descriptions · replaces existing</span>
+                    </button>
+                  </div>
+                </details>
+              )}
+            </div>
             {component.previousDescription !== undefined && (
               <Button
                 onClick={(e: MouseEvent) => {
@@ -378,7 +407,7 @@ export function ComponentRow({
               </Button>
             )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   )

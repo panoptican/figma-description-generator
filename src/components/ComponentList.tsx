@@ -18,6 +18,7 @@ interface ComponentListProps {
     progress: { current: number; total: number }
     overwriteExisting: boolean
     isRefreshing: boolean
+    coolingDownPages: Set<string>
     onGenerate: (pageId: string) => Promise<void>
     onCancel: () => void
   }
@@ -35,6 +36,8 @@ interface ComponentListProps {
   iconOverrides: Record<string, boolean>
   onDisableIcon: (id: string) => void
   generatedThisSession: Set<string>
+  coolingDownIds: Set<string>
+  coolingDownSets: Set<string>
   onUpgrade: () => void
   pendingIds: Set<string>
 }
@@ -56,6 +59,8 @@ export function ComponentList({
   iconOverrides,
   onDisableIcon,
   generatedThisSession,
+  coolingDownIds,
+  coolingDownSets,
   onUpgrade,
   pendingIds
 }: ComponentListProps) {
@@ -178,6 +183,8 @@ export function ComponentList({
         isIcon={isIconModeEnabled(component.isIcon, iconOverrides[component.id])}
         onDisableIcon={onDisableIcon}
         wasGeneratedThisSession={generatedThisSession.has(component.id)}
+        isCoolingDown={coolingDownIds.has(component.id)}
+        isSetCoolingDown={coolingDownSets.has(component.id)}
         onUpgrade={onUpgrade}
         isPending={pendingIds.has(component.id)}
       />
@@ -273,8 +280,8 @@ export function ComponentList({
                 <button
                   type="button"
                   className={styles.pageGenerateButton}
-                  disabled={!isGeneratingPage && (isGenerating || pageGeneration.isRefreshing || pageGenerateCount === 0)}
-                  title={isGeneratingPage ? 'Stop remaining generation on this page. Already-written descriptions stay.' : pageGenerateTitle}
+                  disabled={!isGeneratingPage && (isGenerating || pageGeneration.isRefreshing || pageGeneration.coolingDownPages.has(pageId) || pageGenerateCount === 0)}
+                  title={isGeneratingPage ? 'Stop remaining generation on this page. Already-written descriptions stay.' : pageGeneration.coolingDownPages.has(pageId) ? 'Just generated. Available again in a moment.' : pageGenerateTitle}
                   aria-label={isGeneratingPage ? `Stop generation on ${pageName}` : `${pageGenerateLabel} descriptions on ${pageName}`}
                   onClick={() => {
                     if (isGeneratingPage) {

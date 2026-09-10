@@ -122,7 +122,7 @@ describe('focused row shortcuts', () => {
     expect(props.onGenerate).not.toHaveBeenCalled()
   })
 
-  it.each([{ isHidden: true }, { isModalOpen: true }, { isGenerating: true }])(
+  it.each([{ isHidden: true }, { isModalOpen: true }, { isGenerating: true }, { isCoolingDown: true }])(
     'does not generate when the row cannot run: %j', (state) => {
       const { props, press } = makeRow(state)
       press(keyEvent('g'))
@@ -170,7 +170,7 @@ describe('direct row controls', () => {
   })
 })
 
-describe('joined generation actions', () => {
+describe('scoped generation actions', () => {
   function makeSetRow(overrides: Partial<RowProps> = {}) {
     return makeRow({
       component: {
@@ -182,14 +182,21 @@ describe('joined generation actions', () => {
     })
   }
 
-  function action(row: any, label: string) {
-    return findNode(row, (node) => node.type === 'button' && node.props.children === label)
+  function textContent(node: any): string {
+    if (node == null) return ''
+    if (typeof node !== 'object') return String(node)
+    if (Array.isArray(node)) return node.map(textContent).join('')
+    return textContent(node.props?.children)
   }
 
-  it('runs only the set description from Generate one', async () => {
+  function action(row: any, label: string) {
+    return findNode(row, (node) => node.type === 'button' && textContent(node).startsWith(label))
+  }
+
+  it('regenerates only the set description from the primary action', async () => {
     const { props, row } = makeSetRow()
     const click = { stopPropagation: vi.fn() }
-    action(row, 'Generate one').props.onClick(click)
+    action(row, 'Regenerate').props.onClick(click)
     await Promise.resolve()
 
     expect(props.onGenerate).toHaveBeenCalledExactlyOnceWith(props.component)
@@ -203,7 +210,7 @@ describe('joined generation actions', () => {
   it('runs the existing group action from Set + variants', async () => {
     const { props, row } = makeSetRow()
     const click = { stopPropagation: vi.fn() }
-    action(row, 'Set + variants').props.onClick(click)
+    action(row, 'Set + 1 variant').props.onClick(click)
     await Promise.resolve()
 
     expect(props.onGenerateComponentSet).toHaveBeenCalledExactlyOnceWith(props.component)
@@ -215,28 +222,60 @@ describe('joined generation actions', () => {
 
   it('disables both actions while a batch is running', () => {
     const { row } = makeSetRow({ isGenerating: true })
-    expect(action(row, 'Generate one').props.disabled).toBe(true)
-    expect(action(row, 'Set + variants').props.disabled).toBe(true)
+    expect(action(row, 'Regenerate').props.disabled).toBe(true)
+    expect(action(row, 'Set + 1 variant').props.disabled).toBe(true)
   })
 
   it('offers only single generation when variants are hidden', () => {
     const { row } = makeSetRow({ showVariants: false })
-    expect(action(row, 'Generate description')).toBeDefined()
-    expect(action(row, 'Generate one')).toBeUndefined()
-    expect(action(row, 'Set + variants')).toBeUndefined()
+    expect(action(row, 'Regenerate')).toBeDefined()
+    expect(action(row, 'Set + 1 variant')).toBeUndefined()
   })
 
   it('offers only single generation for sets without variants', () => {
     const component = { ...makeSetRow().props.component, variantContext: [] }
     const { row } = makeSetRow({ component })
-    expect(action(row, 'Generate description')).toBeDefined()
-    expect(action(row, 'Set + variants')).toBeUndefined()
+    expect(action(row, 'Regenerate')).toBeDefined()
+    expect(action(row, 'Set + 1 variant')).toBeUndefined()
   })
 
   it('keeps standalone components on the single action', () => {
     const component = { ...makeSetRow().props.component, type: 'COMPONENT' as const }
     const { row } = makeRow({ component })
-    expect(action(row, 'Generate description')).toBeDefined()
-    expect(action(row, 'Set + variants')).toBeUndefined()
+    expect(action(row, 'Regenerate')).toBeDefined()
+    expect(action(row, 'Set + 1 variant')).toBeUndefined()
   })
+  it('offers generation on a blank variant without a previous description', () => {
+    const component = { ...makeRow().props.component, currentDescription: '', previousDescription: undefined }
+    const { props, row } = makeRow({ component })
+    action(row, 'Generate description').props.onClick({ stopPropagation: vi.fn() })
+    expect(props.onGenerate).toHaveBeenCalledExactlyOnceWith(component)
+    expect(props.onGenerateComponentSet).not.toHaveBeenCalled()
+    expect(findNode(row, node => node.type === 'details')).toBeUndefined()
+  })
+
+  it('shows success and prevents immediate regeneration', () => {
+    const { props, row } = makeRow({ isCoolingDown: true, wasGeneratedThisSession: true })
+    const generate = action(row, '✓ Generated')
+    expect(generate.props.disabled).toBe(true)
+    generate.props.onClick({ stopPropagation: vi.fn() })
+    expect(props.onGenerate).not.toHaveBeenCalled()
+    expect(textContent(findNode(row, node => node.props?.role === 'status'))).toBe('✓ Generated just now')
+  })
+
+  it('keeps completion feedback after the cooldown', () => {
+    const { row } = makeRow({ wasGeneratedThisSession: true })
+    expect(action(row, 'Regenerate').props.disabled).toBe(false)
+    expect(textContent(findNode(row, node => node.props?.role === 'status'))).toBe('✓ Generated this session')
+  })
+
+  it('blocks the full set while a sibling cools down without blocking the parent alone', () => {
+    const { props, row } = makeSetRow({ isSetCoolingDown: true })
+    expect(action(row, 'Regenerate').props.disabled).toBe(false)
+    const batch = action(row, 'Set + 1 variant')
+    expect(batch.props.disabled).toBe(true)
+    batch.props.onClick({ stopPropagation: vi.fn() })
+    expect(props.onGenerateComponentSet).not.toHaveBeenCalled()
+  })
+
 })

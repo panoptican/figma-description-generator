@@ -93,7 +93,7 @@ export function buildPrompt(
       .replace(/{properties}/g, propsString)
   }
 
-  return options?.isIcon ? prompt : addVariantContext(prompt, variantContext)
+  return addVariantContext(prompt, variantContext)
 }
 
 function addParentContext(prompt: string, template: string, parentName?: string): string {
@@ -110,13 +110,10 @@ function addVariantContext(prompt: string, variantContext?: VariantContext[]): s
   }
 
   const variants = variantContext
-    .map(({ name, properties }) => {
-      const props = properties.length > 0 ? properties.join(', ') : 'No parsed properties'
-      return `- ${name}: ${props}`
-    })
+    .map(({ name }) => `- ${name}`)
     .join('\n')
 
-  return `${prompt}\n\nComplete variant set context:\n${variants}`
+  return `${prompt}\n\nComplete variant set context (names only):\n${variants}\n\nUse these names as context. Return only the requested item's description, not a list of descriptions for other variants. Any attached image shows the requested item.`
 }
 
 // The plugin's own generation service. It holds the model key and forwards to Gemini 3.5 Flash-Lite.
