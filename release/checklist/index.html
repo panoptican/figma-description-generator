@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Description Generator · Release QA</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" type="module"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div><span class="eyebrow">Description Generator</span><h1>Release QA</h1></div>
+    <div class="backup-actions">
+      <span id="save-status" role="status">Opening saved results…</span>
+      <button id="export" disabled>Export backup</button>
+      <button id="import" disabled>Import backup</button>
+      <input id="import-file" type="file" accept="application/json,.json" hidden>
+    </div>
+  </header>
+  <div id="notice" role="alert" hidden></div>
+  <div class="workspace">
+    <aside>
+      <div class="progress-summary"><strong id="passed">0 passed</strong><span id="reviewed">Loading checks…</span><progress id="progress" value="0" max="100" aria-label="Checks passed"></progress><p id="breakdown"></p></div>
+      <nav id="sections" aria-label="Checklist sections"></nav>
+      <p class="storage-note">Saved in this browser. Backups include notes and screenshots. Nothing is uploaded.</p>
+      <a class="source-link" href="/qa-checklist.md" target="_blank" rel="noopener">View source checklist ↗</a>
+    </aside>
+    <main>
+      <details class="run-details">
+        <summary>Test environment <span id="environment-summary">Add build, Figma version, and OS</span></summary>
+        <div class="environment-fields">
+          <label>Build date / version<input id="build" placeholder="e.g. Sept 4 · final build"></label>
+          <label>Figma client / version<input id="figma" placeholder="e.g. Figma Desktop 126"></label>
+          <label>Operating system<input id="os" placeholder="e.g. macOS 15.6"></label>
+          <label>File / scope<input id="scope" placeholder="Disposable QA file · both scopes"></label>
+          <label class="wide">Service / model tested<input id="models" placeholder="e.g. description-generator.workers.dev · gemini-3.5-flash-lite"></label>
+        </div>
+      </details>
+      <div class="section-heading"><div><span class="eyebrow" id="section-index">Checklist</span><h2 id="section-title">Loading…</h2></div><span id="section-count"></span></div>
+      <p id="section-description"></p>
+      <div class="filters">
+        <label class="search-label"><span class="sr-only">Search checks and notes</span><input id="search" type="search" placeholder="Search checks and notes"></label>
+        <label><span class="sr-only">Filter results</span><select id="filter"><option value="all">All results</option><option value="pending">Not tested</option><option value="issues">Issues · failed or blocked</option><option value="pass">Passed</option></select></label>
+      </div>
+      <div id="checks" aria-live="off"></div>
+      <p id="empty" hidden>No checks match these filters.</p>
+      <div class="section-footer"><button id="previous">← Previous section</button><button id="next">Next section →</button></div>
+    </main>
+  </div>
+  <dialog id="preview"><form method="dialog"><strong id="preview-name"></strong><button>Close</button></form><img id="preview-image" alt="Attached issue screenshot"></dialog>
+  <dialog id="import-confirm"><form method="dialog"><h2>Restore this backup?</h2><p id="import-description"></p><p>Matching checks will use the backup’s status, notes, and screenshots. Other saved checks stay as they are.</p><div class="dialog-actions"><button value="cancel">Keep current results</button><button value="restore" class="primary">Restore backup</button></div></form></dialog>
+</body>
+</html>
