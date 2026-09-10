@@ -1,9 +1,9 @@
 import { Muted, Text } from '@create-figma-plugin/ui'
-import { h } from 'preact'
+import { ComponentChildren, h } from 'preact'
 import { useState } from 'preact/hooks'
 
 import { ComponentData, Scope } from '../types'
-import { groupComponentRows } from '../utils/componentGroups'
+import { ComponentGroup, groupComponentRows } from '../utils/componentGroups'
 import { isIconModeEnabled } from '../utils/icon'
 import styles from '../ui.css'
 import { isDescriptionEmpty } from '../utils/text'
@@ -127,14 +127,45 @@ export function ComponentList({
     return acc
   }, {} as Record<string, ComponentData[]>)
 
-  function renderRow(component: ComponentData, isHidden = false) {
+  function renderVariantsToggle(group: ComponentGroup) {
+    if (group.variants.length === 0) return null
+    const expanded = !collapsedVariantGroups.has(group.id)
+    const label = `${group.variants.length} ${group.variants.length === 1 ? 'variant' : 'variants'}`
+    return (
+      <button
+        type="button"
+        className={styles.variantsToggle}
+        aria-label={`${expanded ? 'Hide' : 'Show'} ${label} of ${group.component?.name || group.parentName}`}
+        aria-expanded={expanded}
+        aria-controls={`variants-${group.id}`}
+        onClick={(event) => {
+          event.stopPropagation()
+          setCollapsedVariantGroups(previous => {
+            const next = new Set(previous)
+            next.has(group.id) ? next.delete(group.id) : next.add(group.id)
+            return next
+          })
+        }}
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"
+          style={{ transform: expanded ? 'rotate(90deg)' : 'none' }}>
+          <path d="m3.5 2 3 3-3 3" />
+        </svg>
+        {label}
+      </button>
+    )
+  }
+
+  function renderRow(component: ComponentData, options: { isHidden?: boolean; isSticky?: boolean; variantsControl?: ComponentChildren } = {}) {
     return (
       <ComponentRow
         key={component.id}
         component={component}
         showVariants={showVariants}
         isModalOpen={isModalOpen}
-        isHidden={isHidden}
+        isHidden={options.isHidden}
+        isSticky={options.isSticky}
+        variantsControl={options.variantsControl}
         onGenerate={onGenerate}
         onGenerateComponentSet={onGenerateComponentSet}
         onConfirm={onConfirm}
@@ -179,6 +210,7 @@ export function ComponentList({
           <div key={pageId}>
             {/* Page header */}
             <div
+              className={styles.pageHeader}
               style={{
                 padding: '8px 16px',
                 backgroundColor: 'var(--figma-color-bg-secondary)',
@@ -187,9 +219,6 @@ export function ComponentList({
                 alignItems: 'center',
                 gap: '8px',
                 userSelect: 'none',
-                position: 'sticky',
-                top: 0,
-                zIndex: 10
               }}
             >
               {/* Clickable area for collapse/expand page */}
@@ -301,52 +330,26 @@ export function ComponentList({
                     role="group"
                     aria-label={group.component?.name || group.parentName}
                   >
-                    {group.component ? renderRow(group.component) : (
-                      <div className={styles.componentSetContext}>
+                    {group.component ? renderRow(group.component, { isSticky: group.variants.length > 0, variantsControl: renderVariantsToggle(group) }) : (
+                      <div className={`${styles.componentSetContext} ${styles.stickyComponentRow}`}>
                         <span>{group.parentName}</span>
-                        <span>Component set</span>
+                        {renderVariantsToggle(group)}
                       </div>
                     )}
                     {group.variants.length > 0 && (
-                      <div className={styles.componentVariants} role="group" aria-label={`Variants of ${group.component?.name || group.parentName}`}>
-                        <button
-                          type="button"
-                          className={styles.componentVariantsLabel}
-                          aria-label={`Variants of ${group.component?.name || group.parentName}`}
-                          aria-expanded={!collapsedVariantGroups.has(group.id)}
-                          aria-controls={`variants-${group.id}`}
-                          onClick={() => setCollapsedVariantGroups((prev) => {
-                            const next = new Set(prev)
-                            next.has(group.id) ? next.delete(group.id) : next.add(group.id)
-                            return next
-                          })}
-                        >
-                          <svg
-                            width="10"
-                            height="10"
-                            viewBox="0 0 10 10"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.5"
-                            aria-hidden="true"
-                            style={{ transform: collapsedVariantGroups.has(group.id) ? 'none' : 'rotate(90deg)' }}
-                          >
-                            <path d="m3.5 2 3 3-3 3" />
-                          </svg>
-                          Variants
-                        </button>
-                        {/* Keep editors mounted to preserve drafts and pending saves. */}
-                        <div
-                          id={`variants-${group.id}`}
-                          className={styles.componentVariantRows}
-                          hidden={collapsedVariantGroups.has(group.id)}
-                        >
-                          {group.variants.map((variant) => (
-                            <div key={variant.id} className={styles.componentVariant}>
-                              {renderRow(variant, collapsedVariantGroups.has(group.id))}
-                            </div>
-                          ))}
-                        </div>
+                      // Keep editors mounted to preserve drafts and pending saves.
+                      <div
+                        id={`variants-${group.id}`}
+                        className={styles.componentVariants}
+                        role="group"
+                        aria-label={`Variants of ${group.component?.name || group.parentName}`}
+                        hidden={collapsedVariantGroups.has(group.id)}
+                      >
+                        {group.variants.map((variant) => (
+                          <div key={variant.id} className={styles.componentVariant}>
+                            {renderRow(variant, { isHidden: collapsedVariantGroups.has(group.id) })}
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>

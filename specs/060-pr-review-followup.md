@@ -29,4 +29,12 @@ Scope: address the five inline findings on review `5170008936`. Preserve the pub
 - Headless Chromium loaded the actual `build/ui.js` in a fixture with simulated Figma and service responses. Assertions cover shared row/set/page busy controls, cancellation and late image replies, exactly-once set application, page/file Fill selection, quota upgrade feedback, checkout clearing errors, Pro usage, late token replies, and no page errors. Two usage reads occurred: initial identity and checkout.
 - Browser script, fixture, results, and screenshots are archived locally under `logs/process-archive/2026-09-10/pr2-review-fixes/`, with capture provenance. These are browser fixtures, not live Figma captures.
 
+## UI follow-up
+
+- Usage now shares the refresh/settings control geometry: 32px high with 6px corners. The full header ends with Figma's stronger border color.
+- The page row and component-set heading form a sticky stack. Expanded set editors scroll away while their compact headings stay visible. Each heading is bounded by its group, so the next set or page replaces it. Search results that only match variants retain sticky parent context.
+- The chosen right-side count-and-chevron control replaces the separate Variants sub-row. It controls only variant visibility; set editing remains a separate action. Hidden variant editors stay mounted so pending autosaves and drafts survive.
+- Verification: 215 tests and the plugin build pass. The built plugin was exercised in a browser fixture with 32- and 16-variant sets, multiple pages, light/dark themes, and 400px/672px widths. Checks cover sticky positions, collapsing while scrolled, keyboard disclosure, exactly-once draft autosave, and no horizontal overflow or page errors. Live Figma rendering remains a separate manual check.
+- Source screenshot, browser fixtures, captures, results, and provenance are archived locally under `logs/process-archive/2026-09-10/pr2-ui-followup/`. Only the selected synthetic fixture screenshot is included on the PR.
+
 ## Status: COMPLETE

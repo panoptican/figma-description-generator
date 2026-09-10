@@ -109,16 +109,12 @@ export function Header({
     cursor: 'pointer',
     flexShrink: 0
   }
-  const usagePillStyle = {
-    height: 24,
+  const usageStyle = {
+    ...iconButtonStyle,
+    width: 'auto',
     maxWidth: 170,
     padding: '0 8px',
-    border: '1px solid var(--figma-color-border)',
-    borderRadius: '12px',
-    backgroundColor: 'var(--figma-color-bg)',
     color: canUpgrade ? 'var(--figma-color-text)' : 'var(--figma-color-text-secondary)',
-    display: 'flex',
-    alignItems: 'center',
     fontSize: '10px',
     whiteSpace: 'nowrap',
     overflow: 'hidden',
@@ -126,12 +122,12 @@ export function Header({
     flexShrink: 1,
     cursor: canUpgrade ? 'pointer' : 'default'
   }
-  const usagePillContent = (
+  const usageContent = (
     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{usageLabel}</span>
   )
 
   return (
-    <div style={{ flexShrink: 0, backgroundColor: 'var(--figma-color-bg-secondary)' }}>
+    <div style={{ flexShrink: 0, backgroundColor: 'var(--figma-color-bg-secondary)', borderBottom: '1px solid var(--figma-color-border-strong)' }}>
       <div style={{
         padding: '12px 12px 8px',
         display: 'flex',
@@ -170,13 +166,13 @@ export function Header({
             title={`Upgrade to Pro. ${usageTitle}`}
             aria-label={`Upgrade to Pro. ${usageTitle}`}
             onClick={onUpgrade}
-            style={usagePillStyle}
+            style={usageStyle}
           >
-            {usagePillContent}
+            {usageContent}
           </button>
         ) : (
-          <span title={usageTitle} style={usagePillStyle}>
-            {usagePillContent}
+          <span title={usageTitle} style={usageStyle}>
+            {usageContent}
           </span>
         )}
 
@@ -210,7 +206,6 @@ export function Header({
 
       <div style={{
         padding: '0 12px 12px',
-        borderBottom: '1px solid var(--figma-color-border)',
         display: 'flex',
         alignItems: 'center',
         gap: '8px',

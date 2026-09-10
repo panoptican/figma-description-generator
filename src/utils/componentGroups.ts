@@ -1,6 +1,6 @@
 import { ComponentData } from '../types'
 
-interface ComponentGroup {
+export interface ComponentGroup {
   id: string
   component?: ComponentData
   parentName?: string

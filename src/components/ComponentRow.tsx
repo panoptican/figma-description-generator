@@ -1,5 +1,5 @@
 import { Button } from '@create-figma-plugin/ui'
-import { h } from 'preact'
+import { ComponentChildren, h } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 
 import { ComponentData } from '../types'
@@ -13,6 +13,8 @@ interface ComponentRowProps {
   showVariants: boolean
   isModalOpen?: boolean
   isHidden?: boolean
+  isSticky?: boolean
+  variantsControl?: ComponentChildren
   onGenerate: (component: ComponentData) => Promise<void>
   onGenerateComponentSet: (component: ComponentData) => Promise<void>
   onConfirm: (id: string, description: string) => void
@@ -39,6 +41,8 @@ export function ComponentRow({
   component,
   isModalOpen = false,
   isHidden = false,
+  isSticky = false,
+  variantsControl,
   showVariants,
   onGenerate,
   onGenerateComponentSet,
@@ -127,7 +131,7 @@ export function ComponentRow({
         : isDirty
           ? 'Unsaved changes'
           : null
-  const relationshipLabel = component.type === 'COMPONENT_SET' ? 'Component set' : ''
+  const relationshipLabel = component.type === 'COMPONENT_SET' && !variantsControl ? 'Component set' : ''
 
   function handleTitleActivation(e: MouseEvent) {
     e.stopPropagation()
@@ -181,7 +185,7 @@ export function ComponentRow({
   if (!isExpanded) {
     return (
       <div
-        className={`${styles.componentRow} ${styles.componentRowCollapsed}`}
+        className={`${styles.componentRow} ${styles.componentRowCollapsed} ${isSticky ? styles.stickyComponentRow : ''}`}
         ref={(element) => {
           rowElementRef.current = element
         }}
@@ -195,7 +199,6 @@ export function ComponentRow({
           boxSizing: 'border-box',
           cursor: 'pointer',
           transition: 'background-color 0.15s',
-          position: 'relative'
         }}
       >
         <button
@@ -235,19 +238,18 @@ export function ComponentRow({
           {isEmpty ? '' : '✓'}
         </span>
 
-        {isIcon && <div className={styles.rowActions}>{renderIconButton()}</div>}
+        {(isIcon || variantsControl) && <div className={styles.rowActions}>{renderIconButton()}{variantsControl}</div>}
       </div>
     )
   }
 
   return (
     <div
-      className={styles.componentRow}
+      className={`${styles.componentRow} ${isSticky ? styles.stickyComponentRow : ''}`}
       ref={(element) => {
         rowElementRef.current = element
       }}
       onKeyDown={handleKeyDown}
-      style={{ position: 'relative' }}
     >
       <div className={styles.rowHeader}>
         <button
@@ -258,124 +260,126 @@ export function ComponentRow({
           aria-expanded={true}
           onClick={handleTitleActivation}
         >
-          <span title="Click to select in canvas">{component.name}</span>
+          <span title={component.name}>{component.name}</span>
           {relationshipLabel && <span className={styles.rowSetLabel}>{relationshipLabel}</span>}
         </button>
-        {isIcon && <div className={styles.rowActions}>{renderIconButton()}</div>}
+        {(isIcon || variantsControl) && <div className={styles.rowActions}>{renderIconButton()}{variantsControl}</div>}
       </div>
 
-      <textarea
-        className={styles.descriptionInput}
-        aria-label={`${component.name} description`}
-        value={description}
-        onInput={(e) => {
-          setDescription((e.target as HTMLTextAreaElement).value)
-          setIsDirty(true)
-        }}
-        onClick={(e) => {
-          e.stopPropagation()
-        }}
-        rows={2}
-        placeholder="Enter description..."
-        style={{
-          width: '100%',
-          padding: '8px',
-          marginTop: '8px',
-          fontFamily: 'Inter, sans-serif',
-          fontSize: '12px',
-          lineHeight: '16px',
-          resize: 'vertical',
-          boxSizing: 'border-box'
-        }}
-      />
-
-      {(externalError) && (
-        <div style={{ color: 'var(--figma-color-text-danger)', marginTop: '4px', fontSize: '11px' }}>
-          <div>{externalError.message}</div>
-          {externalError.usage?.plan === 'free' && (
-            <Button
-              secondary
-              onClick={(e: MouseEvent) => {
-                e.stopPropagation()
-                onUpgrade()
-              }}
-              style={{ marginTop: '6px' }}
-            >
-              Upgrade to Pro
-            </Button>
-          )}
-        </div>
-      )}
-
-      {feedbackLabel && (
-        <div className={styles.rowFeedback} aria-live="polite">
-          {feedbackLabel}
-        </div>
-      )}
-
-      {(component.type !== 'VARIANT' || component.previousDescription !== undefined) && (
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            justifyContent: 'flex-end',
-            alignItems: 'center',
-            gap: '8px',
-            marginTop: '8px'
+      <div className={styles.rowEditor}>
+        <textarea
+          className={styles.descriptionInput}
+          aria-label={`${component.name} description`}
+          value={description}
+          onInput={(e) => {
+            setDescription((e.target as HTMLTextAreaElement).value)
+            setIsDirty(true)
           }}
-        >
-          {component.type === 'COMPONENT_SET' && showVariants && component.variantContext && component.variantContext.length > 0 ? (
-            <div className={styles.joinedGenerate} role="group" aria-label={`${component.name} generation actions`}>
+          onClick={(e) => {
+            e.stopPropagation()
+          }}
+          rows={2}
+          placeholder="Enter description..."
+          style={{
+            width: '100%',
+            padding: '8px',
+            marginTop: '8px',
+            fontFamily: 'Inter, sans-serif',
+            fontSize: '12px',
+            lineHeight: '16px',
+            resize: 'vertical',
+            boxSizing: 'border-box'
+          }}
+        />
+
+        {(externalError) && (
+          <div style={{ color: 'var(--figma-color-text-danger)', marginTop: '4px', fontSize: '11px' }}>
+            <div>{externalError.message}</div>
+            {externalError.usage?.plan === 'free' && (
               <Button
-                className={styles.joinedGenerateButton}
+                secondary
+                onClick={(e: MouseEvent) => {
+                  e.stopPropagation()
+                  onUpgrade()
+                }}
+                style={{ marginTop: '6px' }}
+              >
+                Upgrade to Pro
+              </Button>
+            )}
+          </div>
+        )}
+
+        {feedbackLabel && (
+          <div className={styles.rowFeedback} aria-live="polite">
+            {feedbackLabel}
+          </div>
+        )}
+
+        {(component.type !== 'VARIANT' || component.previousDescription !== undefined) && (
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              gap: '8px',
+              marginTop: '8px'
+            }}
+          >
+            {component.type === 'COMPONENT_SET' && showVariants && component.variantContext && component.variantContext.length > 0 ? (
+              <div className={styles.joinedGenerate} role="group" aria-label={`${component.name} generation actions`}>
+                <Button
+                  className={styles.joinedGenerateButton}
+                  onClick={(e: MouseEvent) => {
+                    e.stopPropagation()
+                    void onGenerate(component)
+                  }}
+                  disabled={isGenerating}
+                  aria-label={`Generate a description for ${component.name} only`}
+                  title="Generate a description for this component set only. Replaces its existing description."
+                >
+                  Generate one
+                </Button>
+                <Button
+                  className={styles.joinedGenerateButton}
+                  onClick={(e: MouseEvent) => {
+                    e.stopPropagation()
+                    void onGenerateComponentSet(component)
+                  }}
+                  disabled={isGenerating}
+                  aria-label={`Generate descriptions for ${component.name} and all variants`}
+                  title="Generate descriptions for this component set and all variants. Replaces existing descriptions."
+                >
+                  Set + variants
+                </Button>
+              </div>
+            ) : component.type !== 'VARIANT' && (
+              <Button
                 onClick={(e: MouseEvent) => {
                   e.stopPropagation()
                   void onGenerate(component)
                 }}
                 disabled={isGenerating}
-                aria-label={`Generate a description for ${component.name} only`}
-                title="Generate a description for this component set only. Replaces its existing description."
               >
-                Generate one
+                Generate description
               </Button>
+            )}
+
+            {component.previousDescription !== undefined && (
               <Button
-                className={styles.joinedGenerateButton}
                 onClick={(e: MouseEvent) => {
                   e.stopPropagation()
-                  void onGenerateComponentSet(component)
+                  onRevert(component.id)
                 }}
-                disabled={isGenerating}
-                aria-label={`Generate descriptions for ${component.name} and all variants`}
-                title="Generate descriptions for this component set and all variants. Replaces existing descriptions."
+                secondary
               >
-                Set + variants
+                Revert
               </Button>
-            </div>
-          ) : component.type !== 'VARIANT' && (
-            <Button
-              onClick={(e: MouseEvent) => {
-                e.stopPropagation()
-                void onGenerate(component)
-              }}
-              disabled={isGenerating}
-            >
-              Generate description
-            </Button>
-          )}
-
-          {component.previousDescription !== undefined && (
-            <Button
-              onClick={(e: MouseEvent) => {
-                e.stopPropagation()
-                onRevert(component.id)
-              }}
-              secondary
-            >
-              Revert
-            </Button>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
