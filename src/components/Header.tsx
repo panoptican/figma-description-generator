@@ -127,7 +127,11 @@ export function Header({
   )
 
   return (
-    <div style={{ flexShrink: 0, backgroundColor: 'var(--figma-color-bg-secondary)', borderBottom: '1px solid var(--figma-color-border-strong)' }}>
+    <div style={{
+      flexShrink: 0,
+      backgroundColor: 'color-mix(in oklab, var(--figma-color-bg-secondary) 94%, var(--figma-color-text))',
+      borderBottom: '1px solid var(--figma-color-border)'
+    }}>
       <div style={{
         padding: '12px 12px 8px',
         display: 'flex',

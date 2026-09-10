@@ -31,7 +31,7 @@ Scope: address the five inline findings on review `5170008936`. Preserve the pub
 
 ## UI follow-up
 
-- Usage now shares the refresh/settings control geometry: 32px high with 6px corners. The full header ends with Figma's stronger border color.
+- Usage now shares the refresh/settings control geometry: 32px high with 6px corners. The header background mixes 6% of Figma's foreground into the row surface, making it lighter in dark mode and darker in light mode; its divider uses the normal border token. The built-plugin color check passed at 400px and 672px, with secondary-text contrast of 4.64:1 in the light fixture and 4.79:1 in the dark fixture.
 - The page row and component-set heading form a sticky stack. Expanded set editors scroll away while their compact headings stay visible. Each heading is bounded by its group, so the next set or page replaces it. Search results that only match variants retain sticky parent context.
 - The chosen right-side count-and-chevron control replaces the separate Variants sub-row. It controls only variant visibility; set editing remains a separate action. Hidden variant editors stay mounted so pending autosaves and drafts survive.
 - Verification: 215 tests and the plugin build pass. The built plugin was exercised in a browser fixture with 32- and 16-variant sets, multiple pages, light/dark themes, and 400px/672px widths. Checks cover sticky positions, collapsing while scrolled, keyboard disclosure, exactly-once draft autosave, and no horizontal overflow or page errors. Live Figma rendering remains a separate manual check.
