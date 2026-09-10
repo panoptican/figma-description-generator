@@ -59,6 +59,8 @@ You need a Cloudflare account, `wrangler` on your PATH, a Gemini API key from [G
 
 ## Day to day
 
+- Run `npm test -- worker/src` and `npx tsc -p worker/tsconfig.json` after Worker changes. Tests use Node 24's built-in SQLite to execute `schema.sql` and the real D1 queries; only HTTP requests are faked. Reservation failures restore both applicable counters, including across plan changes and month rollover.
+
 - `npm run worker:dev` runs the Worker locally at `http://localhost:8787`. Put `GEMINI_API_KEY=...` and `FAKE_PAYMENTS=1` in `worker/.dev.vars`; fake tokens such as `dev:tester:free` and `dev:tester:pro` work only when this local-only variable is set. Never set `FAKE_PAYMENTS` in production.
 - Apply the local schema before the first request: `wrangler d1 execute description-generator --config worker/wrangler.jsonc --local --file worker/schema.sql`.
 - `npm run worker:tail` streams live logs. Each generation logs token counts only, never prompt or description text.

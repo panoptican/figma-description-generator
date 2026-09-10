@@ -35,7 +35,7 @@ src/
 worker/
 ├── wrangler.jsonc   # Worker config, D1, limits, and per-IP rate limit
 ├── schema.sql       # D1 users and token-cache tables
-└── src/             # Identity, quota, routing, and test fakes
+└── src/             # Identity, quota, Gemini adapter, routing, and SQLite test adapter
 build/               # Generated plugin bundle (git-ignored)
 ```
 

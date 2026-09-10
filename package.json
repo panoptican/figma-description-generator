@@ -25,6 +25,7 @@
     "@create-figma-plugin/build": "^4.0.3",
     "@create-figma-plugin/tsconfig": "^3.2.0",
     "@figma/plugin-typings": "^1.98.0",
+    "@types/node": "^24.13.4",
     "typescript": "^5.3.3",
     "vitest": "^4.0.18",
     "wrangler": "^4.130.0"

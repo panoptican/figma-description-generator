@@ -10,11 +10,15 @@ interface UserRow {
   pro_limit_override: number | null
 }
 
-interface ReserveRow {
-  lifetime_count: number
-  period_count: number
-  free_limit_override: number | null
-  pro_limit_override: number | null
+export interface Reservation {
+  userId: string
+  period: string
+}
+
+export class QuotaExceededError extends Error {
+  constructor(public readonly usage: Usage, public readonly userId: string) {
+    super('Description limit reached')
+  }
 }
 
 function currentPeriod(now: number | Date): string {
@@ -47,13 +51,7 @@ function usageFromRow(row: Pick<UserRow, 'lifetime_count' | 'period' | 'period_c
   }
 }
 
-function updateUsage(row: ReserveRow, plan: Plan, limits: Limits, period: string): Usage {
-  return plan === 'free'
-    ? { plan, used: row.lifetime_count, limit: row.free_limit_override ?? limits.freeLifetimeLimit, period: null, resetsAt: null }
-    : { plan, used: row.period_count, limit: row.pro_limit_override ?? limits.proMonthlyLimit, period, resetsAt: nextMonthReset(period) }
-}
-
-export async function reserve(db: D1Database, userId: string, plan: Plan, limits: Limits, now: number | Date = Date.now()): Promise<{ ok: true; usage: Usage } | { ok: false; usage: Usage }> {
+export async function reserve(db: D1Database, userId: string, plan: Plan, limits: Limits, now: number | Date = Date.now()): Promise<{ ok: true; usage: Usage; reservation: Reservation } | { ok: false; usage: Usage }> {
   const period = currentPeriod(now)
   const updatedAt = new Date(now instanceof Date ? now.getTime() : now > 1_000_000_000_000 ? now : now * 1000).toISOString()
   const result = await db.prepare(`UPDATE users SET
@@ -66,24 +64,12 @@ WHERE user_id = ?3 AND (
   OR
   (?4 = 0 AND lifetime_count < COALESCE(free_limit_override, ?5))
 )
-RETURNING lifetime_count, period_count, free_limit_override, pro_limit_override;`)
+RETURNING lifetime_count, period, period_count, free_limit_override, pro_limit_override;`)
     .bind(period, updatedAt, userId, plan === 'pro' ? 1 : 0, limits.freeLifetimeLimit, limits.proMonthlyLimit)
-    .first<ReserveRow>()
-
-  if (result) return { ok: true, usage: updateUsage(result, plan, limits, period) }
-
-  const row = await db.prepare('SELECT user_id, plan, lifetime_count, period, period_count, free_limit_override, pro_limit_override FROM users WHERE user_id = ?1')
-    .bind(userId)
     .first<UserRow>()
-  if (!row) {
-    return {
-      ok: false,
-      usage: plan === 'free'
-        ? { plan, used: 0, limit: limits.freeLifetimeLimit, period: null, resetsAt: null }
-        : { plan, used: 0, limit: limits.proMonthlyLimit, period, resetsAt: nextMonthReset(period) }
-    }
-  }
-  return { ok: false, usage: usageFromRow(row, plan, limits, period) }
+
+  if (result) return { ok: true, usage: usageFromRow(result, plan, limits, period), reservation: { userId, period } }
+  return { ok: false, usage: await getUsage(db, userId, plan, limits, now) }
 }
 
 export async function getUsage(db: D1Database, userId: string, plan: Plan, limits: Limits, now: number | Date = Date.now()): Promise<Usage> {
@@ -99,11 +85,30 @@ export async function getUsage(db: D1Database, userId: string, plan: Plan, limit
   return usageFromRow(row, plan, limits, period)
 }
 
-export async function release(db: D1Database, userId: string, plan: Plan, period: string): Promise<void> {
+export async function release(db: D1Database, reservation: Reservation): Promise<void> {
   await db.prepare(`UPDATE users SET
   lifetime_count = MAX(lifetime_count - 1, 0),
   period_count = CASE WHEN period = ?2 THEN MAX(period_count - 1, 0) ELSE period_count END
-WHERE user_id = ?1 AND (?3 = 0 OR period = ?2)`)
-    .bind(userId, period, plan === 'pro' ? 1 : 0)
+WHERE user_id = ?1`)
+    .bind(reservation.userId, reservation.period)
     .run()
+}
+
+export async function withReservation<T>(db: D1Database, identity: { userId: string; plan: Plan }, limits: Limits, operation: () => Promise<T>): Promise<{ value: T; usage: Usage }> {
+  const result = await reserve(db, identity.userId, identity.plan, limits)
+  if (!result.ok) throw new QuotaExceededError(result.usage, identity.userId)
+
+  try {
+    const value = await operation()
+    const usage = await getUsage(db, identity.userId, identity.plan, limits)
+    return { value, usage }
+  } catch (error) {
+    try {
+      await release(db, result.reservation)
+    } catch {
+      // Do not log database error text, which can include query contents.
+      console.error(JSON.stringify({ event: 'reservation_release_failed', ...result.reservation }))
+    }
+    throw error
+  }
 }

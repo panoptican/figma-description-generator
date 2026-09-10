@@ -1,11 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import worker from './index'
 import { GEMINI_MODEL, MAX_IMAGE_CHARS, MAX_PROMPT_CHARS } from './constants'
-import { FakeD1 } from './testing/fakeD1'
+import { createTestDatabase } from './testing/sqliteD1'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
-const env = { GEMINI_API_KEY: 'secret', DB: new FakeD1(), FAKE_PAYMENTS: '1' }
+let env: { GEMINI_API_KEY: string; DB: ReturnType<typeof createTestDatabase>; FAKE_PAYMENTS: string }
+beforeEach(() => { env = { GEMINI_API_KEY: 'secret', DB: createTestDatabase(), FAKE_PAYMENTS: '1' } })
 
 function post(body: unknown, headers: Record<string, string> = {}) {
   if (body && typeof body === 'object' && !Array.isArray(body) && !('paymentToken' in body)) {
@@ -144,9 +145,7 @@ describe('generation service', () => {
   it('returns quota details and releases a reservation after a Gemini failure', async () => {
     const db = env.DB
     await worker.fetch(new Request('https://service.test/usage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paymentToken: 'dev:limited:free' }) }), env)
-    const user = db.users.get('limited')
-    if (user) user.free_limit_override = 1
-    else throw new Error('limited user was not seeded')
+    await db.prepare('UPDATE users SET free_limit_override = 1 WHERE user_id = ?1').bind('limited').run()
     const fetch = vi.fn()
       .mockResolvedValueOnce(geminiResponse({ error: { message: 'bad key' } }, 400))
       .mockResolvedValueOnce(geminiResponse({ candidates: [{ content: { parts: [{ text: 'Works.' }] } }] }))
@@ -161,5 +160,53 @@ describe('generation service', () => {
     const blocked = await worker.fetch(post({ prompt: 'Describe', paymentToken: 'dev:limited:free' }), env)
     expect(blocked.status).toBe(402)
     expect(await blocked.json()).toMatchObject({ code: 'quota_exceeded', usage: { used: 1, limit: 1 } })
+  })
+
+  it.each([
+    null,
+    { candidates: {} },
+    { candidates: [null] },
+    { candidates: [{ content: { parts: {} } }] },
+    { candidates: [{ content: { parts: [null] } }] },
+    { candidates: [{ content: { parts: [{ text: 42 }] } }] },
+  ])('returns a structured error and releases malformed Gemini responses: %j', async (body) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(geminiResponse(body)))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const prepare = vi.spyOn(env.DB, 'prepare')
+    const response = await worker.fetch(post({ prompt: 'Describe' }), env)
+    expect(response.status).toBe(502)
+    expect(await response.json()).toMatchObject({ code: 'upstream_error' })
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*')
+    expect(await env.DB.prepare('SELECT lifetime_count, period_count FROM users WHERE user_id = ?1').bind('tester').first()).toEqual({ lifetime_count: 0, period_count: 0 })
+    expect(prepare.mock.calls.filter(([sql]) => sql.includes('lifetime_count = MAX'))).toHaveLength(1)
+  })
+
+  it('rolls back when the usage read fails after generation', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(geminiResponse({ candidates: [{ content: { parts: [{ text: 'Done.' }] } }] })))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const prepare = env.DB.prepare.bind(env.DB)
+    vi.spyOn(env.DB, 'prepare').mockImplementation(sql => {
+      if (sql.startsWith('SELECT user_id, plan, lifetime_count')) throw new Error('Database unavailable')
+      return prepare(sql)
+    })
+    const response = await worker.fetch(post({ prompt: 'Describe' }), env)
+    expect(response.status).toBe(500)
+    expect(await response.json()).toMatchObject({ code: 'service_error' })
+    expect(await env.DB.prepare('SELECT lifetime_count, period_count FROM users WHERE user_id = ?1').bind('tester').first()).toEqual({ lifetime_count: 0, period_count: 0 })
+  })
+
+  it('logs cleanup failure once without leaking raw database errors', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network unavailable')))
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const prepare = env.DB.prepare.bind(env.DB)
+    const queries = vi.spyOn(env.DB, 'prepare').mockImplementation(sql => {
+      if (sql.includes('lifetime_count = MAX')) throw new Error('Sensitive database error')
+      return prepare(sql)
+    })
+    const response = await worker.fetch(post({ prompt: 'Describe' }), env)
+    expect(response.status).toBe(502)
+    expect(queries.mock.calls.filter(([sql]) => sql.includes('lifetime_count = MAX'))).toHaveLength(1)
+    expect(log.mock.calls.filter(([message]) => JSON.parse(message).event === 'reservation_release_failed')).toHaveLength(1)
+    expect(JSON.stringify(log.mock.calls)).not.toContain('Sensitive')
   })
 })
