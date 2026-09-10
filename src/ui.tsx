@@ -3,6 +3,7 @@ import { h } from 'preact'
 
 import { App } from './components/App'
 import { Scope } from './types'
+import './ui.css'
 
 interface PluginData {
   scope: Scope

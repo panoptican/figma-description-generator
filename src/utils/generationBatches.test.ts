@@ -9,6 +9,7 @@ const createComponent = (overrides: Partial<ComponentData> = {}): ComponentData 
   type: 'COMPONENT',
   properties: [],
   currentDescription: '',
+  pageId: 'page-1',
   pageName: 'Page 1',
   ...overrides
 })
@@ -87,6 +88,61 @@ describe('getGenerationBatches', () => {
 
   it('restricts set generation to the set when variants are hidden', () => {
     expect(getComponentSetMembers(inventory, set, false).map(member => member.id)).toEqual(['set'])
+  })
+
+  const otherPage = inventory.map(component => ({
+    ...component,
+    id: `other-${component.id}`,
+    parentId: component.parentId ? `other-${component.parentId}` : undefined,
+    pageId: 'page-2',
+    pageName: 'Page 2',
+  }))
+  const wholeFile = [...inventory, ...otherPage]
+
+  it.each([false, true])('limits page generation to the chosen page (overwrite=%s)', (overwrite) => {
+    const batches = getGenerationBatches(wholeFile, wholeFile, overwrite, true, 'page-2')
+    const members = batches.flatMap(batch => batch.members)
+    expect(members.map(member => member.id)).toEqual(overwrite
+      ? ['other-button', 'other-card', 'other-spacer', 'other-set', 'other-v1', 'other-v2']
+      : ['other-button', 'other-spacer', 'other-set', 'other-v1'])
+    expect(members.every(member => member.pageName === 'Page 2')).toBe(true)
+  })
+
+  it('keeps page generation limited to search targets while grouping variant siblings', () => {
+    const visible = [variantMissing, otherPage.find(component => component.id === 'other-v1')!]
+    const batches = getGenerationBatches(wholeFile, visible, true, true, 'page-2')
+    expect(batches.map(batch => batch.members.map(member => member.id))).toEqual([
+      ['other-set', 'other-v1', 'other-v2'],
+    ])
+  })
+
+  it('excludes hidden variants from a page run', () => {
+    const batches = getGenerationBatches(wholeFile, wholeFile, true, false, 'page-2')
+    expect(batches.flatMap(batch => batch.members.map(member => member.id))).toEqual([
+      'other-button', 'other-card', 'other-spacer', 'other-set',
+    ])
+  })
+
+  it('returns no work when the page has no matching targets', () => {
+    expect(getGenerationBatches(wholeFile, inventory, false, true, 'page-2')).toEqual([])
+    expect(getGenerationBatches(wholeFile, wholeFile, true, true, 'Unknown page')).toEqual([])
+  })
+
+  it('keeps same-named pages separate during page generation', () => {
+    const sameNamedPage = otherPage.map(component => ({ ...component, pageName: 'Page 1' }))
+    const file = [...inventory, ...sameNamedPage]
+    const members = getGenerationBatches(file, file, true, true, 'page-2')
+      .flatMap(batch => batch.members)
+    expect(members.map(member => member.id)).toEqual(sameNamedPage.map(member => member.id))
+  })
+
+  it('keeps the page button count consistent with the whole-file batch inventory', () => {
+    const expectedCount = getGenerationBatches(wholeFile, wholeFile, false).flatMap(batch => batch.members)
+      .filter(member => member.pageId === 'page-2').length
+    const pageCount = getGenerationBatches(wholeFile, wholeFile, false, true, 'page-2')
+      .reduce((count, batch) => count + batch.members.length, 0)
+    expect(pageCount).toBe(expectedCount)
+    expect(pageCount).toBe(4)
   })
 
 })

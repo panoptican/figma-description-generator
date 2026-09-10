@@ -25,7 +25,7 @@ Add specifications to `specs/` as markdown files. The agent picks the highest pr
 ## Project Structure & Module Organization
 - `src/main.ts` wires Figma command handlers and settings persistence; UI entry sits in `src/ui.tsx`.
 - UI is built from Preact components under `src/components/`; shared types live in `src/types.ts`.
-- Service logic (AI calls, prompt shaping) is under `src/services/`.
+- Service logic (prompt shaping and the generation-service client) is under `src/services/`; the Cloudflare Worker that holds the Gemini key lives in `worker/`.
 - Built plugin bundles land in `build/`; `manifest.json` is the Figma entry manifest.
 
 ## Build, Test, and Development Commands
@@ -42,6 +42,8 @@ Add specifications to `specs/` as markdown files. The agent picks the highest pr
 - No automated tests present; validate changes by running `npm run watch`, reloading the plugin in Figma, and exercising both “This page” and “Entire file” menu entries.
 - When adding logic, prefer extracting testable helpers; if you add tests, colocate under `src/**/__tests__` and align naming with the module under test.
 - Verify description application, variant parsing, and image export flows before shipping.
+- Preserve screenshots and screen recordings from plugin development and QA under `logs/process-archive/YYYY-MM-DD/`. Copy temporary captures there during the same session, before cleanup; keep originals unchanged.
+- Record each capture's source path, timestamp, session ID, and prompt/turn reference when available. Label live Figma captures, browser QA fixtures, demo frames, and generated artwork distinctly so the process post can accurately place them in context. The archive is local and is not automatically published.
 
 ## Commit & Pull Request Guidelines
 - Commits follow concise, imperative summaries (e.g., “Add collapsible page rows”, “Update default prompts”); keep scope focused.
@@ -49,5 +51,5 @@ Add specifications to `specs/` as markdown files. The agent picks the highest pr
 - Link to any relevant issue/ticket; mention edge cases touched (component sets, variants, API failures).
 
 ## Security & Configuration Tips
-- Do not commit API keys; they are user settings stored via Figma’s settings API. If adding new providers, guard against missing secrets and prefer optional UI fields.
+- Never commit the Gemini key. It lives only as a Worker secret (`wrangler secret put GEMINI_API_KEY`) and, locally, in the git-ignored `worker/.dev.vars`. The plugin must not accept or store user API keys; Figma rejects bring-your-own-key plugins.
 - Keep plugin permissions minimal; changes to `manifest.json` should be documented in the PR summary.

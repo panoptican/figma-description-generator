@@ -15,6 +15,10 @@ import {
   DescriptionAppliedHandler,
   ExportImageHandler,
   ImageExportedHandler,
+  GetPaymentTokenHandler,
+  PaymentTokenHandler,
+  StartCheckoutHandler,
+  CheckoutFinishedHandler,
   LoadComponentsHandler,
   LoadSettingsHandler,
   SaveSettingsHandler,
@@ -54,6 +58,7 @@ async function getComponents(scope: Scope): Promise<ComponentData[]> {
           type: 'COMPONENT_SET',
           properties: extractComponentSetProperties(node),
           currentDescription: node.description,
+          pageId: page.id,
           pageName: page.name,
           variantContext,
           isIcon: isIconComponent(node.name, page.name)
@@ -66,6 +71,7 @@ async function getComponents(scope: Scope): Promise<ComponentData[]> {
             type: 'VARIANT',
             properties: parseVariantName(variant.name),
             currentDescription: variant.description,
+            pageId: page.id,
             pageName: page.name,
             parentName: node.name,
             parentId: node.id,
@@ -85,6 +91,7 @@ async function getComponents(scope: Scope): Promise<ComponentData[]> {
           type: 'COMPONENT',
           properties: [],
           currentDescription: node.description,
+          pageId: page.id,
           pageName: page.name,
           isIcon: isIconComponent(node.name, page.name)
         })
@@ -129,7 +136,7 @@ function initPlugin(scope: Scope) {
   const currentPageName = figma.currentPage.name
 
   showUI({
-    width: 960,
+    width: 675,
     height: 800
   }, { scope, currentPageName })
 
@@ -139,17 +146,18 @@ function initPlugin(scope: Scope) {
   let scanVersion = 0
   const loadComponents = async () => {
     const version = ++scanVersion
+    const scannedPage = figma.currentPage
     try {
       const components = await getComponents(scope)
       // Page switches and rescans can overtake an earlier asynchronous scan.
       if (version === scanVersion) {
-        emit<ComponentsLoadedHandler>('COMPONENTS_LOADED', components)
+        emit<ComponentsLoadedHandler>('COMPONENTS_LOADED', components, scannedPage.name)
       }
     } catch (error) {
       if (version !== scanVersion) return
       console.error('Failed to load components:', error)
       figma.notify('Could not load components. Please try Rescan.', { error: true })
-      emit<ComponentsLoadedHandler>('COMPONENTS_LOADED', [])
+      emit<ComponentsLoadedHandler>('COMPONENTS_LOADED', [], scannedPage.name)
     }
   }
 
@@ -189,10 +197,13 @@ function initPlugin(scope: Scope) {
   })
 
   on<LoadSettingsHandler>('LOAD_SETTINGS', async () => {
-    const settings = await loadSettingsAsync(DEFAULT_SETTINGS)
-    // Migration: strip removed fields from old settings
-    const { enableFallback, providerChain, ...cleanSettings } = settings as Settings & { enableFallback?: boolean; providerChain?: unknown }
-    emit<SettingsLoadedHandler>('SETTINGS_LOADED', cleanSettings)
+    const stored = await loadSettingsAsync(DEFAULT_SETTINGS) as Settings & Record<string, unknown>
+    // Migration: earlier releases stored a provider API key and model choices. Drop those fields and
+    // rewrite storage so a key from the bring-your-own-key era does not linger on disk.
+    const { provider, apiKey, models, enableFallback, providerChain, ...cleanSettings } = stored
+    const hadRemovedFields = [provider, apiKey, models, enableFallback, providerChain].some(value => value !== undefined)
+    if (hadRemovedFields) await saveSettingsAsync(cleanSettings)
+    emit<SettingsLoadedHandler>('SETTINGS_LOADED', cleanSettings as Settings)
   })
 
   on<SaveSettingsHandler>('SAVE_SETTINGS', async (settings: Settings) => {
@@ -219,7 +230,7 @@ function initPlugin(scope: Scope) {
     }
   })
 
-  on<ExportImageHandler>('EXPORT_IMAGE', async ({ id }) => {
+  on<ExportImageHandler>('EXPORT_IMAGE', async ({ id, requestId }) => {
     try {
       const node = await figma.getNodeByIdAsync(id)
       if (node && 'exportAsync' in node) {
@@ -229,14 +240,33 @@ function initPlugin(scope: Scope) {
         })
         // Convert Uint8Array to base64
         const base64 = figma.base64Encode(bytes)
-        emit<ImageExportedHandler>('IMAGE_EXPORTED', { id, imageBase64: base64 })
+        emit<ImageExportedHandler>('IMAGE_EXPORTED', { id, requestId, imageBase64: base64 })
       } else {
-        emit<ImageExportedHandler>('IMAGE_EXPORTED', { id, imageBase64: null })
+        emit<ImageExportedHandler>('IMAGE_EXPORTED', { id, requestId, imageBase64: null })
       }
     } catch (error) {
       console.error('Failed to export image:', error)
-      emit<ImageExportedHandler>('IMAGE_EXPORTED', { id, imageBase64: null })
+      emit<ImageExportedHandler>('IMAGE_EXPORTED', { id, requestId, imageBase64: null })
     }
+  })
+
+  on<GetPaymentTokenHandler>('GET_PAYMENT_TOKEN', async (requestId) => {
+    try {
+      const payments = figma.payments
+      const token = payments ? await payments.getPluginPaymentTokenAsync() : null
+      emit<PaymentTokenHandler>('PAYMENT_TOKEN', { requestId, token, status: payments?.status?.type ?? 'NOT_SUPPORTED' })
+    } catch {
+      emit<PaymentTokenHandler>('PAYMENT_TOKEN', { requestId, token: null, status: figma.payments?.status?.type ?? 'NOT_SUPPORTED' })
+    }
+  })
+
+  on<StartCheckoutHandler>('START_CHECKOUT', async () => {
+    try {
+      await figma.payments?.initiateCheckoutAsync({ interstitial: 'PAID_FEATURE' })
+    } catch {
+      // The UI refreshes identity after both completed and dismissed checkout.
+    }
+    emit<CheckoutFinishedHandler>('CHECKOUT_FINISHED', { status: figma.payments?.status?.type ?? 'NOT_SUPPORTED' })
   })
 
   on<ClosePluginHandler>('CLOSE_PLUGIN', () => {

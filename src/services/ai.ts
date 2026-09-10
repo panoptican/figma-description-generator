@@ -1,6 +1,14 @@
-import { AIProvider, ModelSelection, VariantContext } from '../types'
-import { CLAUDE_MODEL, GEMINI_MODEL, GLM_MODEL, OPENAI_MODEL, selectedModel } from './models'
-export { CLAUDE_MODEL, GEMINI_MODEL, GLM_MODEL, OPENAI_MODEL } from './models'
+import { VariantContext } from '../types'
+
+export type Plan = 'free' | 'pro'
+
+export interface Usage {
+  plan: Plan
+  used: number
+  limit: number
+  period: string | null
+  resetsAt: string | null
+}
 
 export const DEFAULT_PROMPT = `Write a brief description for a design system component.
 
@@ -46,21 +54,6 @@ Rules:
 
 Output only the description text.`
 
-export function getProviderDisplayName(provider: AIProvider): string {
-  switch (provider) {
-    case 'chatgpt':
-      return 'ChatGPT'
-    case 'claude':
-      return 'Claude'
-    case 'gemini':
-      return 'Gemini'
-    case 'openrouter':
-      return 'OpenRouter'
-    default:
-      return provider
-  }
-}
-
 export function buildPrompt(
   componentName: string,
   componentType: string,
@@ -100,7 +93,7 @@ export function buildPrompt(
       .replace(/{properties}/g, propsString)
   }
 
-  return options?.isIcon ? prompt : addVariantContext(prompt, variantContext)
+  return addVariantContext(prompt, variantContext)
 }
 
 function addParentContext(prompt: string, template: string, parentName?: string): string {
@@ -117,276 +110,160 @@ function addVariantContext(prompt: string, variantContext?: VariantContext[]): s
   }
 
   const variants = variantContext
-    .map(({ name, properties }) => {
-      const props = properties.length > 0 ? properties.join(', ') : 'No parsed properties'
-      return `- ${name}: ${props}`
-    })
+    .map(({ name }) => `- ${name}`)
     .join('\n')
 
-  return `${prompt}\n\nComplete variant set context:\n${variants}`
+  return `${prompt}\n\nComplete variant set context (names only):\n${variants}\n\nUse these names as context. Return only the requested item's description, not a list of descriptions for other variants. Any attached image shows the requested item.`
 }
 
-async function generateWithGemini(
-  apiKey: string,
-  prompt: string,
-  imageBase64?: string,
-  abortSignal?: AbortSignal,
-  model: string = GEMINI_MODEL
-): Promise<string> {
-  const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = []
+// The plugin's own generation service. It holds the model key and forwards to Gemini 3.5 Flash-Lite.
+// Change this together with networkAccess.allowedDomains in package.json; a test keeps them aligned.
+export const GENERATION_ENDPOINT = 'https://description-generator.spidleweb.workers.dev/generate'
+const MAX_RETRIES = 2
+const DEFAULT_RETRY_SECONDS = 5
+const MAX_RETRY_SECONDS = 15
 
-  if (imageBase64) {
-    parts.push({
-      inlineData: {
-        mimeType: 'image/png',
-        data: imageBase64
-      }
-    })
+export interface GenerationInput {
+  componentName: string
+  componentType: string
+  properties: string[]
+  parentName?: string
+  customPrompt?: string
+  customVariantPrompt?: string
+  imageBase64?: string
+  iconOptions?: { isIcon?: boolean; customIconPrompt?: string }
+  variantContext?: VariantContext[]
+  paymentToken: string
+  abortSignal?: AbortSignal
+}
+
+export interface GenerationResult {
+  description: string
+  usage: Usage
+}
+
+export class TokenError extends Error {
+  constructor() {
+    super('Your Figma session could not be verified. Reopen the plugin and try again.')
+    this.name = 'TokenError'
   }
-  parts.push({ text: prompt })
+}
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts
-        }]
-      }),
-      signal: abortSignal
+export class QuotaExceededError extends Error {
+  constructor(public readonly usage: Usage, message: string) {
+    super(message)
+    this.name = 'QuotaExceededError'
+  }
+}
+
+function abortError(): Error {
+  const error = new Error('Generation cancelled')
+  error.name = 'AbortError'
+  return error
+}
+
+function wait(seconds: number, abortSignal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (abortSignal?.aborted) return reject(abortError())
+    const timer = setTimeout(() => {
+      abortSignal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, seconds * 1000)
+    function onAbort() {
+      clearTimeout(timer)
+      reject(abortError())
     }
-  )
-
-  if (!response.ok) {
-    const error = await response.text()
-    throw new Error(`Gemini API error: ${error}`)
-  }
-
-  const data = await response.json()
-  if (data.candidates?.[0]?.finishReason === 'MAX_TOKENS') throw new Error('The selected model reached its response limit.')
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-
-  if (!text) {
-    throw new Error('No response from Gemini')
-  }
-
-  return text.trim()
+    abortSignal?.addEventListener('abort', onAbort)
+  })
 }
 
-async function generateWithClaude(
-  apiKey: string,
-  prompt: string,
-  imageBase64?: string,
-  abortSignal?: AbortSignal,
-  model: string = CLAUDE_MODEL
-): Promise<string> {
-  type ContentBlock = { type: 'text'; text: string } | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
-  const content: ContentBlock[] = []
+function retryDelay(response: Response): number {
+  const header = Number(response.headers?.get?.('Retry-After'))
+  const seconds = Number.isFinite(header) && header > 0 ? header : DEFAULT_RETRY_SECONDS
+  return Math.min(seconds, MAX_RETRY_SECONDS)
+}
 
-  if (imageBase64) {
-    content.push({
-      type: 'image',
-      source: {
-        type: 'base64',
-        media_type: 'image/png',
-        data: imageBase64
+function readUsage(data: unknown): Usage | undefined {
+  const usage = (data as { usage?: Usage } | null)?.usage
+  if (!usage || (usage.plan !== 'free' && usage.plan !== 'pro') || typeof usage.used !== 'number' || typeof usage.limit !== 'number') return undefined
+  return usage
+}
+
+async function requestDescription(prompt: string, imageBase64: string | undefined, paymentToken: string, abortSignal?: AbortSignal): Promise<GenerationResult> {
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(GENERATION_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(imageBase64 ? { prompt, imageBase64, paymentToken } : { prompt, paymentToken }),
+      signal: abortSignal
+    })
+
+    // The service rate-limits per address and returns Retry-After; batches pace themselves on it.
+    if ((response.status === 429 || response.status === 503) && attempt < MAX_RETRIES) {
+      await wait(retryDelay(response), abortSignal)
+      continue
+    }
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => undefined)
+      const message = typeof data?.error === 'string' ? data.error : undefined
+      if (response.status === 401) throw new TokenError()
+      if (response.status === 402) {
+        const usage = readUsage(data)
+        if (usage) throw new QuotaExceededError(usage, message || 'You have reached your description limit.')
       }
-    })
+      if (response.status === 429) throw new Error(message || 'Too many requests. Wait a moment and try again.')
+      throw new Error(message || `Generation failed (${response.status}). Try again shortly.`)
+    }
+
+    const data = await response.json()
+    const text = data?.description
+    if (typeof text !== 'string' || !text.trim()) throw new Error('No description was returned. Try again.')
+    const usage = readUsage(data) || { plan: 'free', used: 0, limit: 1_000, period: null, resetsAt: null }
+    return { description: text.trim(), usage }
   }
-  content.push({ type: 'text', text: prompt })
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: model === CLAUDE_MODEL ? 256 : 4096,
-      messages: [{
-        role: 'user',
-        content: imageBase64 ? content : prompt
-      }]
-    }),
-    signal: abortSignal
-  })
-
-  if (!response.ok) {
-    const error = await response.text()
-    throw new Error(`Claude API error: ${error}`)
-  }
-
-  const data = await response.json()
-  if (data.stop_reason === 'max_tokens') throw new Error('The selected model reached its response limit.')
-  const text = data.content?.find((block: { type?: string; text?: string }) => block.type === 'text' || typeof block.text === 'string')?.text
-
-  if (!text) {
-    throw new Error('No response from Claude')
-  }
-
-  return text.trim()
 }
 
-async function generateWithChatGPT(
-  apiKey: string,
-  prompt: string,
-  imageBase64?: string,
-  abortSignal?: AbortSignal,
-  model: string = OPENAI_MODEL
-): Promise<string> {
-  type ContentPart =
-    | { type: 'input_text'; text: string }
-    | { type: 'input_image'; image_url: string }
-  const content: ContentPart[] = []
-
-  if (imageBase64) {
-    content.push({
-      type: 'input_image',
-      image_url: `data:image/png;base64,${imageBase64}`
-    })
-  }
-  content.push({ type: 'input_text', text: prompt })
-
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model,
-      ...(model === OPENAI_MODEL ? { reasoning: { effort: 'none' } } : {}),
-      max_output_tokens: model === OPENAI_MODEL ? 256 : 4096,
-      input: [{
-        role: 'user',
-        content
-      }]
-    }),
-    signal: abortSignal
-  })
-
-  if (!response.ok) {
-    const error = await response.text()
-    throw new Error(`ChatGPT API error: ${error}`)
-  }
-
-  const data = await response.json()
-  if (data.status === 'incomplete') throw new Error('The selected model reached its response limit.')
-  const text = data.output_text || data.output
-    ?.flatMap((item: { content?: Array<{ type?: string; text?: string }> }) => item.content || [])
-    .find((item: { type?: string; text?: string }) => item.type === 'output_text')?.text
-
-  if (!text) {
-    throw new Error('No response from ChatGPT')
-  }
-
-  return text.trim()
-}
-
-export function openRouterReasoning(model: ModelSelection) {
-  const reasoning = model.reasoning || (model.id === GLM_MODEL ? selectedModel('openrouter').reasoning : undefined)
-  if (!reasoning) return {}
-  if (!reasoning.mandatory) return { reasoning: { enabled: false, exclude: true } }
-  const effort = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
-    .find(value => value !== 'none' && reasoning.supportedEfforts?.includes(value))
-  return { reasoning: { ...(effort ? { effort } : {}), exclude: true } }
-}
-
-async function generateWithOpenRouter(
-  apiKey: string,
-  prompt: string,
-  imageBase64?: string,
-  abortSignal?: AbortSignal,
-  model: ModelSelection = selectedModel('openrouter')
-): Promise<string> {
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: model.id,
-      ...openRouterReasoning(model),
-      max_tokens: 4096,
-      messages: [{
-        role: 'user',
-        content: imageBase64
-          ? [
-              { type: 'text', text: prompt },
-              { type: 'image_url', image_url: { url: `data:image/png;base64,${imageBase64}` } }
-            ]
-          : prompt
-      }]
-    }),
-    signal: abortSignal
-  })
-
-  if (!response.ok) {
-    if (response.status === 401) throw new Error('Invalid OpenRouter API key. Check Settings.')
-    if (response.status === 402) throw new Error('OpenRouter credits are exhausted. Add credits to your account.')
-    if (response.status === 429) throw new Error('OpenRouter is rate limiting requests. Try again shortly.')
-    throw new Error(`OpenRouter request failed (${response.status}). Try again shortly.`)
-  }
-
-  const data = await response.json()
-  if (data.error) throw new Error('OpenRouter could not complete the request. Try again shortly.')
-  const choice = data.choices?.[0]
-  if (choice?.finish_reason === 'length') {
-    throw new Error('The selected model reached its response limit. Try a smaller component or variant set.')
-  }
-  const text = choice?.message?.content
-  if (typeof text !== 'string' || !text.trim()) throw new Error('No description returned by OpenRouter.')
-  return text.trim()
-}
-
-export async function generateDescription(
-  provider: AIProvider,
-  apiKey: string,
-  componentName: string,
-  componentType: string,
-  properties: string[],
-  parentName?: string,
-  customPrompt?: string,
-  customVariantPrompt?: string,
-  imageBase64?: string,
-  iconOptions?: { isIcon?: boolean; customIconPrompt?: string },
-  variantContext?: VariantContext[],
-  abortSignal?: AbortSignal,
-  modelOverride?: ModelSelection
-): Promise<string> {
-  const model = modelOverride?.id.trim() ? modelOverride : selectedModel(provider)
-  if (imageBase64 && model.supportsImages === false) {
-    throw new Error('This model does not accept images. Choose an image-capable model, or turn off image inclusion and icon mode.')
-  }
+export async function generateDescriptionWithUsage(input: GenerationInput): Promise<GenerationResult> {
   const prompt = buildPrompt(
-    componentName,
-    componentType,
-    properties,
-    parentName,
-    customPrompt,
-    customVariantPrompt,
-    iconOptions,
-    variantContext
+    input.componentName,
+    input.componentType,
+    input.properties,
+    input.parentName,
+    input.customPrompt,
+    input.customVariantPrompt,
+    input.iconOptions,
+    input.variantContext
   )
+  return requestDescription(prompt, input.imageBase64, input.paymentToken, input.abortSignal)
+}
 
-  switch (provider) {
-    case 'gemini':
-      return generateWithGemini(apiKey, prompt, imageBase64, abortSignal, model.id)
-    case 'claude':
-      return generateWithClaude(apiKey, prompt, imageBase64, abortSignal, model.id)
-    case 'chatgpt':
-      return generateWithChatGPT(apiKey, prompt, imageBase64, abortSignal, model.id)
-    case 'openrouter':
-      return generateWithOpenRouter(apiKey, prompt, imageBase64, abortSignal, model)
-    default:
-      throw new Error(`Unknown provider: ${provider}`)
+// Keep the original string-returning helper for callers that only need the description.
+export async function generateDescription(input: GenerationInput): Promise<string> {
+  return (await generateDescriptionWithUsage(input)).description
+}
+
+function usageEndpoint(): string {
+  const url = new URL(GENERATION_ENDPOINT)
+  url.pathname = '/usage'
+  url.search = ''
+  return url.toString()
+}
+
+export async function fetchUsage(paymentToken: string, abortSignal?: AbortSignal): Promise<Usage> {
+  const response = await fetch(usageEndpoint(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paymentToken }),
+    signal: abortSignal
+  })
+  const data = await response.json().catch(() => undefined)
+  if (response.status === 401) throw new TokenError()
+  if (!response.ok) {
+    const message = typeof data?.error === 'string' ? data.error : `Usage unavailable (${response.status}).`
+    throw new Error(message)
   }
+  const usage = readUsage(data)
+  if (!usage) throw new Error('The usage response was incomplete. Try again.')
+  return usage
 }

@@ -1,7 +1,7 @@
 import { EventHandler } from '@create-figma-plugin/utilities'
 
-export type AIProvider = 'gemini' | 'claude' | 'chatgpt' | 'openrouter'
 export type Scope = 'current-page' | 'all-pages'
+export type PaymentStatus = 'UNPAID' | 'PAID' | 'NOT_SUPPORTED'
 
 export interface VariantContext {
   name: string
@@ -15,6 +15,7 @@ export interface ComponentData {
   properties: string[]
   currentDescription: string
   previousDescription?: string
+  pageId: string
   pageName: string
   parentName?: string
   parentId?: string
@@ -22,16 +23,7 @@ export interface ComponentData {
   isIcon?: boolean
 }
 
-export interface ModelSelection {
-  id: string
-  name: string
-  supportsImages?: boolean
-  reasoning?: { mandatory?: boolean; supportedEfforts?: string[] }
-}
-
 export interface Settings {
-  provider: AIProvider
-  apiKey: string
   customPrompt: string
   customVariantPrompt: string
   customIconPrompt: string
@@ -39,7 +31,6 @@ export interface Settings {
   showVariants: boolean
   overwriteExisting: boolean
   iconOverrides?: Record<string, boolean>
-  models?: Partial<Record<AIProvider, ModelSelection>>
 }
 
 export interface LoadComponentsHandler extends EventHandler {
@@ -49,7 +40,7 @@ export interface LoadComponentsHandler extends EventHandler {
 
 export interface ComponentsLoadedHandler extends EventHandler {
   name: 'COMPONENTS_LOADED'
-  handler: (components: ComponentData[]) => void
+  handler: (components: ComponentData[], currentPageName: string) => void
 }
 
 export interface ApplyDescriptionHandler extends EventHandler {
@@ -94,10 +85,30 @@ export interface SelectComponentHandler extends EventHandler {
 
 export interface ExportImageHandler extends EventHandler {
   name: 'EXPORT_IMAGE'
-  handler: (data: { id: string }) => void
+  handler: (data: { id: string; requestId: number }) => void
 }
 
 export interface ImageExportedHandler extends EventHandler {
   name: 'IMAGE_EXPORTED'
-  handler: (data: { id: string; imageBase64: string | null }) => void
+  handler: (data: { id: string; requestId: number; imageBase64: string | null }) => void
+}
+
+export interface GetPaymentTokenHandler extends EventHandler {
+  name: 'GET_PAYMENT_TOKEN'
+  handler: (requestId: number) => void
+}
+
+export interface PaymentTokenHandler extends EventHandler {
+  name: 'PAYMENT_TOKEN'
+  handler: (data: { requestId: number; token: string | null; status: PaymentStatus }) => void
+}
+
+export interface StartCheckoutHandler extends EventHandler {
+  name: 'START_CHECKOUT'
+  handler: () => void
+}
+
+export interface CheckoutFinishedHandler extends EventHandler {
+  name: 'CHECKOUT_FINISHED'
+  handler: (data: { status: PaymentStatus }) => void
 }

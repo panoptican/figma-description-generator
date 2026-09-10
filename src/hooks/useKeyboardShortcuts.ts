@@ -1,11 +1,39 @@
 import { useEffect, useCallback, MutableRef } from 'preact/hooks'
 
 export interface KeyboardShortcutHandlers {
-  onGenerateSingle?: () => void
   onGenerateAll?: () => void
   onFocusSearch?: () => void
   onCloseModal?: () => void
-  onRevert?: () => void
+}
+
+interface RowKeyboardShortcutHandlers {
+  onGenerate: () => void
+  onRevert: () => void
+  onCollapse?: () => void
+}
+
+// Attach to the row itself: keyboard events arrive from the currently focused control.
+export function handleRowKeyboardShortcut(event: KeyboardEvent, handlers: RowKeyboardShortcutHandlers) {
+  if (event.defaultPrevented || event.isComposing || event.altKey) return
+
+  const target = event.target as HTMLElement
+  const isTextInput = target.tagName === 'INPUT' && !['checkbox', 'radio'].includes((target as HTMLInputElement).type)
+  const isEditing = isTextInput || target.tagName === 'TEXTAREA' || target.isContentEditable
+  const modKey = event.metaKey || event.ctrlKey
+  let action: (() => void) | undefined
+
+  if (event.key === 'Escape') {
+    action = handlers.onCollapse
+  } else if (modKey && !event.shiftKey && event.key.toLowerCase() === 'g') {
+    action = handlers.onGenerate
+  } else if (modKey && !event.shiftKey && event.key.toLowerCase() === 'z' && !isEditing) {
+    action = handlers.onRevert
+  }
+
+  if (!action) return
+  event.preventDefault()
+  event.stopPropagation()
+  if (!event.repeat) action()
 }
 
 /**
@@ -13,10 +41,8 @@ export interface KeyboardShortcutHandlers {
  * Uses Cmd on Mac and Ctrl on Windows.
  *
  * Shortcuts:
- * - Cmd/Ctrl+G: Generate description for selected component
  * - Cmd/Ctrl+Shift+G: Generate all descriptions
  * - Cmd/Ctrl+F: Focus search field
- * - Cmd/Ctrl+Z: Revert to previous description (when not in text field)
  * - Escape: Close settings modal if open
  */
 export function useKeyboardShortcuts(
@@ -26,13 +52,13 @@ export function useKeyboardShortcuts(
   isModalOpen: boolean = false
 ) {
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
-    if (!enabled) return
+    if (!enabled || event.defaultPrevented) return
 
     // Check for modifier key (Cmd on Mac, Ctrl on Windows)
     const modKey = event.metaKey || event.ctrlKey
 
     // Escape - close modal
-    if (event.key === 'Escape') {
+    if (event.key === 'Escape' && isModalOpen) {
       event.preventDefault()
       handlers.onCloseModal?.()
       return
@@ -66,20 +92,6 @@ export function useKeyboardShortcuts(
     if (modKey && event.shiftKey && event.key.toLowerCase() === 'g') {
       event.preventDefault()
       handlers.onGenerateAll?.()
-      return
-    }
-
-    // Cmd/Ctrl+G - generate single
-    if (modKey && !event.shiftKey && event.key.toLowerCase() === 'g') {
-      event.preventDefault()
-      handlers.onGenerateSingle?.()
-      return
-    }
-
-    // Cmd/Ctrl+Z - revert (only when not in text input)
-    if (modKey && event.key.toLowerCase() === 'z' && !event.shiftKey) {
-      event.preventDefault()
-      handlers.onRevert?.()
       return
     }
   }, [handlers, searchInputRef, enabled, isModalOpen])

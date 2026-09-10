@@ -1,15 +1,14 @@
 import { createDefaultSettings } from '../settings'
 import { emit, on } from '@create-figma-plugin/utilities'
 import { h } from 'preact'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
 
 import {
   ApplyDescriptionHandler,
   ComponentData,
   ComponentsLoadedHandler,
   DescriptionAppliedHandler,
-  ExportImageHandler,
-  ImageExportedHandler,
+  StartCheckoutHandler,
   LoadComponentsHandler,
   LoadSettingsHandler,
   SaveSettingsHandler,
@@ -20,15 +19,17 @@ import {
   SelectComponentHandler
 } from '../types'
 import {
-  generateDescription,
   DEFAULT_PROMPT,
   DEFAULT_VARIANT_PROMPT,
-  DEFAULT_ICON_PROMPT,
-  getProviderDisplayName
+  DEFAULT_ICON_PROMPT
 } from '../services/ai'
-import { selectedModel } from '../services/models'
-import { getComponentSetMembers, getGenerationBatches } from '../utils/generationBatches'
+import { GenerationBatch, getComponentSetMembers, getGenerationBatches } from '../utils/generationBatches'
+import { isIconModeEnabled } from '../utils/icon'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { usePaymentSession } from '../hooks/usePaymentSession'
+import { useGenerationCooldown } from '../hooks/useGenerationCooldown'
+import { createGenerationRunner, GenerationError, idleGeneration } from '../services/generationRunner'
+import { createComponentImageExporter } from '../services/componentImage'
 import { Header } from './Header'
 import { SettingsModal } from './SettingsModal'
 import { ComponentList } from './ComponentList'
@@ -40,45 +41,35 @@ interface AppProps {
 
 const DEFAULT_SETTINGS = createDefaultSettings()
 
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AbortError'
-}
-
 export function App({ scope, currentPageName }: AppProps) {
   const [components, setComponents] = useState<ComponentData[]>([])
+  const [loadedPageName, setLoadedPageName] = useState(currentPageName)
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [searchValue, setSearchValue] = useState('')
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [isGeneratingAll, setIsGeneratingAll] = useState(false)
+  const [images] = useState(createComponentImageExporter)
+  useEffect(() => () => images.dispose(), [images])
+  const [generation, setGeneration] = useState(idleGeneration)
+  const isGenerating = generation.total > 0
   const [generatedThisSession, setGeneratedThisSession] = useState<Set<string>>(new Set())
-  const [generateProgress, setGenerateProgress] = useState({ current: 0, total: 0 })
-  const [rowErrors, setRowErrors] = useState<Record<string, string | undefined>>({})
-  const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
+  const cooldown = useGenerationCooldown()
+  const [rowErrors, setRowErrors] = useState<Record<string, GenerationError | undefined>>({})
+  const [headerNotice, setHeaderNotice] = useState<string | null>(null)
   const [iconOverrides, setIconOverrides] = useState<Record<string, boolean>>({})
-  const abortGenerateAllRef = useRef(false)
-  const generateAllAbortControllerRef = useRef<AbortController | null>(null)
-  // BUG-001 fix: Map of resolvers keyed by component ID instead of single ref
-  const imageExportResolvers = useRef<Map<string, (value: string | null) => void>>(new Map())
   const searchInputRef = useRef<HTMLInputElement | null>(null)
-  const CONCURRENCY_LIMIT = 3
-
-  // Helper to export component image and wait for result
-  const exportComponentImage = useCallback((componentId: string): Promise<string | null> => {
-    return new Promise((resolve) => {
-      imageExportResolvers.current.set(componentId, resolve)
-      emit<ExportImageHandler>('EXPORT_IMAGE', { id: componentId })
-    })
-  }, [])
-
-  // Load initial data
+  const { session: payments, usageState } = usePaymentSession(() => {
+    setHeaderNotice(null)
+    setRowErrors({})
+  })
+  // Load initial data and the current Figma payment identity.
   useEffect(() => {
     const unsubscribeComponents = on<ComponentsLoadedHandler>(
       'COMPONENTS_LOADED',
-      (loadedComponents) => {
+      (loadedComponents, pageName) => {
         setComponents(loadedComponents)
-        setSelectedRowId(null)
+        setLoadedPageName(pageName)
         setRowErrors({})
         setIsRefreshing(false)
         setIsLoading(false)
@@ -109,21 +100,9 @@ export function App({ scope, currentPageName }: AppProps) {
       ({ id, success }) => {
         if (!success) {
           console.error(`Failed to apply description for component ${id}`)
-          setRowErrors((prev) => ({ ...prev, [id]: 'Failed to apply description to canvas' }))
+          setRowErrors((prev) => ({ ...prev, [id]: { message: 'Failed to apply description to canvas' } }))
         } else {
           setRowErrors((prev) => ({ ...prev, [id]: undefined }))
-        }
-      }
-    )
-
-    // BUG-001 fix: resolve by component ID from the Map
-    const unsubscribeImageExported = on<ImageExportedHandler>(
-      'IMAGE_EXPORTED',
-      ({ id, imageBase64 }) => {
-        const resolve = imageExportResolvers.current.get(id)
-        if (resolve) {
-          resolve(imageBase64)
-          imageExportResolvers.current.delete(id)
         }
       }
     )
@@ -136,20 +115,19 @@ export function App({ scope, currentPageName }: AppProps) {
       unsubscribeSettings()
       unsubscribeSettingsSaved()
       unsubscribeDescriptionApplied()
-      unsubscribeImageExported()
     }
   }, [])
 
   const handleRefreshComponents = useCallback(() => {
-    if (isRefreshing || isGeneratingAll) {
+    if (isRefreshing || isGenerating) {
       return
     }
 
     setIsRefreshing(true)
-    setSelectedRowId(null)
     setRowErrors({})
+    setHeaderNotice(null)
     emit<LoadComponentsHandler>('LOAD_COMPONENTS')
-  }, [isRefreshing, isGeneratingAll])
+  }, [isRefreshing, isGenerating])
 
   const markGeneratedThisSession = useCallback((id: string) => {
     setGeneratedThisSession((previous) => {
@@ -192,68 +170,54 @@ export function App({ scope, currentPageName }: AppProps) {
 
   const generationBatches = getGenerationBatches(components, filteredComponents, settings.overwriteExisting, settings.showVariants)
   const generateCount = generationBatches.reduce((count, batch) => count + batch.members.length, 0)
-  const selectedComponent = useMemo(
-    () => filteredComponents.find((component) => component.id === selectedRowId) ?? null,
-    [filteredComponents, selectedRowId]
-  )
-  const providerLabel = useMemo(() => getProviderDisplayName(settings.provider), [settings.provider])
-
-  useEffect(() => {
-    if (selectedRowId === null) {
-      return
+  const pageGenerationCounts = new Map<string, number>()
+  const coolingDownPages = new Set<string>()
+  const coolingDownSets = new Set<string>()
+  for (const component of components) {
+    if (cooldown.ids.has(component.id)) coolingDownSets.add(component.parentId || component.id)
+  }
+  for (const batch of generationBatches) {
+    for (const member of batch.members) {
+      pageGenerationCounts.set(member.pageId, (pageGenerationCounts.get(member.pageId) || 0) + 1)
+      if (cooldown.ids.has(member.id)) coolingDownPages.add(member.pageId)
     }
-    if (!filteredComponents.some((component) => component.id === selectedRowId)) {
-      setSelectedRowId(null)
-    }
-  }, [filteredComponents, selectedRowId])
+  }
 
   const handleGenerate = useCallback(
-    async (component: ComponentData, abortSignal?: AbortSignal): Promise<string> => {
-      const isIcon = iconOverrides[component.id] ?? component.isIcon ?? false
+    async (component: ComponentData, abortSignal: AbortSignal): Promise<string> => {
+      const isIcon = isIconModeEnabled(component.isIcon, iconOverrides[component.id])
       let imageBase64: string | undefined
 
       if (settings.includeImage || isIcon) {
-        const image = await exportComponentImage(component.id)
+        const image = await images.export(component.id, abortSignal)
         if (image) {
           imageBase64 = image
         }
       }
 
-      const description = await generateDescription(
-        settings.provider,
-        settings.apiKey,
-        component.name,
-        component.type,
-        component.properties,
-        component.parentName,
-        settings.customPrompt || undefined,
-        settings.customVariantPrompt || undefined,
+      const input = {
+        componentName: component.name,
+        componentType: component.type,
+        properties: component.properties,
+        parentName: component.parentName,
+        customPrompt: settings.customPrompt || undefined,
+        customVariantPrompt: settings.customVariantPrompt || undefined,
         imageBase64,
-        { isIcon, customIconPrompt: settings.customIconPrompt || undefined },
-        component.variantContext,
-        abortSignal,
-        selectedModel(settings.provider, settings.models)
-      )
-
-      return description
+        iconOptions: { isIcon, customIconPrompt: settings.customIconPrompt || undefined },
+        variantContext: component.variantContext,
+        abortSignal
+      }
+      return payments.generate(input)
     },
-    [settings, exportComponentImage, iconOverrides]
+    [settings, iconOverrides, payments, images]
   )
 
-  // Toggle icon status for a component
-  const handleToggleIcon = useCallback((componentId: string) => {
+  const handleDisableIcon = useCallback((componentId: string) => {
+    if (!components.find((component) => component.id === componentId)?.isIcon) return
+
     setIconOverrides((prev) => {
-      const current = prev[componentId]
-      const component = components.find((c) => c.id === componentId)
-      const autoDetected = component?.isIcon ?? false
-      let newOverrides: Record<string, boolean>
-      // Cycle: if no override, set opposite of auto; if overridden, clear override
-      if (current === undefined) {
-        newOverrides = { ...prev, [componentId]: !autoDetected }
-      } else {
-        const { [componentId]: _, ...rest } = prev
-        newOverrides = rest
-      }
+      if (prev[componentId] === false) return prev
+      const newOverrides = { ...prev, [componentId]: false }
 
       // BUG-003 fix: persist icon overrides to settings
       const newSettings = { ...settings, iconOverrides: newOverrides }
@@ -263,15 +227,8 @@ export function App({ scope, currentPageName }: AppProps) {
     })
   }, [components, settings])
 
-  // Wrapper for ComponentRow that expects just description string
-  const handleGenerateForRow = useCallback(
-    async (component: ComponentData): Promise<string> => {
-      return handleGenerate(component)
-    },
-    [handleGenerate]
-  )
-
   const handleConfirm = useCallback((id: string, description: string) => {
+    clearGeneratedThisSession(id)
     emit<ApplyDescriptionHandler>('APPLY_DESCRIPTION', { id, description })
 
     // Update local state
@@ -287,35 +244,40 @@ export function App({ scope, currentPageName }: AppProps) {
       )
     )
     setRowErrors((prev) => ({ ...prev, [id]: undefined }))
-  }, [])
+  }, [clearGeneratedThisSession])
 
-  const handleGenerateComponentSet = useCallback(async (componentSet: ComponentData): Promise<void> => {
-    const members = getComponentSetMembers(components, componentSet, settings.showVariants)
-    const failures: string[] = []
+  const [runner] = useState(() => createGenerationRunner({
+    onChange: setGeneration,
+    onStart: ids => {
+      setHeaderNotice(null)
+      setRowErrors(previous => {
+        const next = { ...previous }
+        ids.forEach(id => { delete next[id] })
+        return next
+      })
+    },
+    onResult: (component, description) => {
+      handleConfirm(component.id, description)
+      markGeneratedThisSession(component.id)
+      cooldown.start(component.id)
+    },
+    onError: (id, error) => setRowErrors(previous => ({ ...previous, [id]: error })),
+    onQuotaExceeded: setHeaderNotice,
+  }))
+  useEffect(() => () => runner.cancel(), [runner])
 
-    for (const member of members) {
-      try {
-        const description = await handleGenerate(member)
-        markGeneratedThisSession(member.id)
-        handleConfirm(member.id, description)
-      } catch (error) {
-        console.error(`Failed to generate for ${member.name}:`, error)
-        failures.push(member.name)
-        setRowErrors((prev) => ({
-          ...prev,
-          [member.id]: error instanceof Error ? error.message : 'Generation failed'
-        }))
-      }
-    }
+  const handleGenerateBatches = useCallback((batches: GenerationBatch[], pageId?: string) => {
+    if (isRefreshing || cooldown.includes(batches.flatMap(batch => batch.members.map(member => member.id)))) return Promise.resolve()
+    return runner.run(batches, handleGenerate, pageId)
+  }, [isRefreshing, runner, handleGenerate, cooldown.includes])
 
-    if (failures.length > 0) {
-      throw new Error(`Failed to generate: ${failures.join(', ')}`)
-    }
-  }, [components, settings.showVariants, handleGenerate, markGeneratedThisSession, handleConfirm])
+  const handleGenerateForRow = useCallback((component: ComponentData) => (
+    handleGenerateBatches([{ members: [component] }])
+  ), [handleGenerateBatches])
 
-  const handleReject = useCallback((id: string) => {
-    // Reset is handled in ComponentRow
-  }, [])
+  const handleGenerateComponentSet = useCallback((componentSet: ComponentData) => (
+    handleGenerateBatches([{ members: getComponentSetMembers(components, componentSet, settings.showVariants) }])
+  ), [components, settings.showVariants, handleGenerateBatches])
 
   const handleRevert = useCallback((id: string) => {
     const target = components.find((c) => c.id === id)
@@ -356,131 +318,18 @@ export function App({ scope, currentPageName }: AppProps) {
     emit<SaveSettingsHandler>('SAVE_SETTINGS', defaults)
   }, [])
 
-  const handleGenerateAll = useCallback(async () => {
-    if (!settings.apiKey) return
-
-    setIsGeneratingAll(true)
-    abortGenerateAllRef.current = false
-    const abortController = new AbortController()
-    generateAllAbortControllerRef.current = abortController
-
-    const batchesToGenerate = generationBatches
-    const totalToGenerate = batchesToGenerate.reduce((count, batch) => count + batch.members.length, 0)
-
-    if (totalToGenerate === 0) {
-      setIsGeneratingAll(false)
-      setGenerateProgress({ current: 0, total: 0 })
-      generateAllAbortControllerRef.current = null
-      return
-    }
-
-    setGenerateProgress({ current: 0, total: totalToGenerate })
-
-    let completed = 0
-
-    // BUG-002 fix: queue-based approach instead of shared index. Component sets
-    // remain atomic jobs while their members are generated sequentially.
-    const queue = [...batchesToGenerate]
-
-    const processBatch = async (batch: typeof batchesToGenerate[number]) => {
-      for (const component of batch.members) {
-        if (abortGenerateAllRef.current) return
-
-        try {
-          const description = await handleGenerate(component, abortController.signal)
-
-          // Cancel drops results even if the provider already returned.
-          if (abortGenerateAllRef.current) return
-
-          markGeneratedThisSession(component.id)
-          emit<ApplyDescriptionHandler>('APPLY_DESCRIPTION', {
-            id: component.id,
-            description
-          })
-
-          setComponents((prev) =>
-            prev.map((c) =>
-              c.id === component.id
-                ? {
-                    ...c,
-                    previousDescription: c.currentDescription,
-                    currentDescription: description
-                  }
-                : c
-            )
-          )
-
-          setRowErrors((prev) => ({ ...prev, [component.id]: undefined }))
-        } catch (error) {
-          if (abortGenerateAllRef.current || isAbortError(error)) {
-            return
-          }
-          console.error(`Failed to generate for ${component.name}:`, error)
-          setRowErrors((prev) => ({
-            ...prev,
-            [component.id]: error instanceof Error ? error.message : 'Generation failed'
-          }))
-        } finally {
-          completed += 1
-          setGenerateProgress({ current: completed, total: totalToGenerate })
-        }
-      }
-    }
-
-    const runWorker = async () => {
-      while (!abortGenerateAllRef.current) {
-        const batch = queue.shift()
-        if (!batch) break
-        await processBatch(batch)
-      }
-    }
-
-    const workerCount = Math.min(CONCURRENCY_LIMIT, batchesToGenerate.length || 1)
-    await Promise.all(Array.from({ length: workerCount }, runWorker))
-
-    setIsGeneratingAll(false)
-    setGenerateProgress({ current: 0, total: 0 })
-    abortGenerateAllRef.current = false
-    generateAllAbortControllerRef.current = null
-  }, [generationBatches, settings, handleGenerate, markGeneratedThisSession])
-
-  const handleCancelGenerateAll = useCallback(() => {
-    abortGenerateAllRef.current = true
-    generateAllAbortControllerRef.current?.abort()
+  const handleUpgrade = useCallback(() => {
+    emit<StartCheckoutHandler>('START_CHECKOUT')
   }, [])
 
-  const handleGenerateSelected = useCallback(async () => {
-    if (!selectedComponent || !settings.apiKey || isGeneratingAll) {
-      return
-    }
+  const handleGenerateAll = useCallback(() => {
+    return handleGenerateBatches(generationBatches)
+  }, [generationBatches, handleGenerateBatches])
 
-    try {
-      if (selectedComponent.type === 'VARIANT') {
-        const parent = components.find((component) => component.id === selectedComponent.parentId)
-        if (parent) {
-          await handleGenerateComponentSet(parent)
-        }
-        return
-      }
-
-      const description = await handleGenerate(selectedComponent)
-      markGeneratedThisSession(selectedComponent.id)
-      handleConfirm(selectedComponent.id, description)
-    } catch (error) {
-      console.error(`Failed to generate for ${selectedComponent.name}:`, error)
-      setRowErrors((prev) => ({
-        ...prev,
-        [selectedComponent.id]: error instanceof Error ? error.message : 'Generation failed'
-      }))
-    }
-  }, [selectedComponent, components, settings.apiKey, isGeneratingAll, handleGenerate, handleGenerateComponentSet, markGeneratedThisSession, handleConfirm])
-
-  const handleRevertSelected = useCallback(() => {
-    if (!selectedComponent) {
-      return
-    }
-    handleRevert(selectedComponent.id)
-  }, [selectedComponent, handleRevert])
+  const handleGeneratePage = useCallback((pageId: string) => {
+    const batches = getGenerationBatches(components, filteredComponents, settings.overwriteExisting, settings.showVariants, pageId)
+    return handleGenerateBatches(batches, pageId)
+  }, [components, filteredComponents, settings.overwriteExisting, settings.showVariants, handleGenerateBatches])
 
   // Close Settings with Escape
   const handleCloseModal = useCallback(() => {
@@ -493,14 +342,10 @@ export function App({ scope, currentPageName }: AppProps) {
   useKeyboardShortcuts(
     {
       onGenerateAll: () => {
-        if (settings.apiKey && !isGeneratingAll) {
+        if (!isGenerating) {
           handleGenerateAll()
         }
       },
-      onGenerateSingle: () => {
-        void handleGenerateSelected()
-      },
-      onRevert: handleRevertSelected,
       onCloseModal: handleCloseModal,
       onFocusSearch: () => {
         searchInputRef.current?.focus()
@@ -540,44 +385,55 @@ export function App({ scope, currentPageName }: AppProps) {
         onSearchChange={setSearchValue}
         onSettingsClick={() => setIsSettingsOpen(true)}
         onGenerateAllClick={handleGenerateAll}
-        onCancelClick={handleCancelGenerateAll}
+        onCancelClick={runner.cancel}
         onRefreshClick={handleRefreshComponents}
         refreshTitle={scope === 'current-page' ? 'Rescan this page' : 'Rescan entire file'}
-        scopeLabel={scope === 'current-page' ? `This page · ${currentPageName}` : 'Entire file'}
+        scopeLabel={scope === 'current-page' ? 'This page' : 'Entire file'}
+        pageName={scope === 'current-page' ? loadedPageName : undefined}
         overwriteExisting={settings.overwriteExisting}
-        isGenerating={isGeneratingAll}
+        isGenerating={isGenerating}
         isRefreshing={isRefreshing}
-        hasApiKey={!!settings.apiKey}
-        progress={generateProgress}
+        isCoolingDown={coolingDownPages.size > 0}
+        progress={generation}
         generateCount={generateCount}
         searchInputRef={searchInputRef}
+        usageState={usageState}
+        notice={headerNotice}
+        onUpgrade={handleUpgrade}
       />
 
       <ComponentList
         components={filteredComponents}
+        pageGeneration={scope === 'all-pages' ? {
+          counts: pageGenerationCounts,
+          activePageId: generation.pageId,
+          progress: generation,
+          overwriteExisting: settings.overwriteExisting,
+          isRefreshing,
+          coolingDownPages,
+          onGenerate: handleGeneratePage,
+          onCancel: runner.cancel,
+        } : undefined}
         showVariants={settings.showVariants}
         searchValue={searchValue}
         scope={scope}
         isModalOpen={isSettingsOpen}
         onGenerate={handleGenerateForRow}
         onGenerateComponentSet={handleGenerateComponentSet}
-        onGenerated={markGeneratedThisSession}
         onConfirm={handleConfirm}
-        onReject={handleReject}
         onRevert={handleRevert}
-        selectedRowId={selectedRowId}
-        onRowSelect={setSelectedRowId}
         onSelect={(id) => {
-          setSelectedRowId(id)
           emit<SelectComponentHandler>('SELECT_COMPONENT', { id })
         }}
-        isGenerating={isGeneratingAll}
-        hasApiKey={!!settings.apiKey}
-        providerLabel={providerLabel}
+        isGenerating={isGenerating}
         rowErrors={rowErrors}
         iconOverrides={iconOverrides}
-        onToggleIcon={handleToggleIcon}
+        onDisableIcon={handleDisableIcon}
         generatedThisSession={generatedThisSession}
+        coolingDownIds={cooldown.ids}
+        coolingDownSets={coolingDownSets}
+        onUpgrade={handleUpgrade}
+        pendingIds={generation.pendingIds}
       />
 
       <SettingsModal

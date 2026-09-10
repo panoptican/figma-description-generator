@@ -1,6 +1,6 @@
 # Release QA checklist
 
-Run this against the final rebuilt plugin in a disposable Figma file. Record pass, fail, or blocked for each check; unchecked items are unverified. Record the build date, Figma client/version, OS, scope, and provider. Capture screenshots of failures without keys or confidential designs.
+Run this against the final rebuilt plugin in a disposable Figma file. Record pass, fail, or blocked for each check; unchecked items are unverified. Record the build date, Figma client/version, OS, scope, and the deployed service URL. Capture screenshots of failures without confidential designs.
 
 ## Automated checks
 
@@ -9,7 +9,8 @@ Use the pinned Node 24 runtime.
 - [ ] `npm test` passes.
 - [ ] `npm run build` passes.
 - [ ] Review `npm audit` and `npm audit --omit=dev`; record unresolved findings separately from build success.
-- [ ] The generated `manifest.json` includes `documentAccess: "dynamic-page"` and restricts network access to the four API hosts (OpenAI, Anthropic, Google, and OpenRouter).
+- [ ] The generated `manifest.json` keeps the Figma-assigned plugin ID, includes `documentAccess: "dynamic-page"`, and restricts network access to the single generation-service host.
+- [ ] `wrangler deploy --config worker/wrangler.jsonc --dry-run` succeeds and lists the rate-limit binding.
 
 ## Prepare the file
 
@@ -20,7 +21,7 @@ Use the pinned Node 24 runtime.
 
 ## Launch and dynamic page loading
 
-- [ ] Without a saved key, setup guidance appears and generation is disabled.
+- [ ] Generation controls are enabled on first launch with no setup step.
 - [ ] This page on the empty page shows the empty state.
 - [ ] This page lists only the active page. Switching pages refreshes the inventory automatically.
 - [ ] Reopen the Figma file, then launch Entire file before visiting other pages. Components on previously unloaded pages appear.
@@ -31,23 +32,36 @@ Use the pinned Node 24 runtime.
 ## Settings and header regressions
 
 - [ ] Expand several rows, then repeatedly open and close Settings with Save, Cancel, close button, and Escape. The dialog appears consistently and rows do not unexpectedly collapse.
-- [ ] Saved provider, key, prompts, and preferences survive reopening. Cancel and Escape discard unsaved modal changes.
-- [ ] Setup explains API account/key requirements, possible provider charges, immediate application, and the icon image exception.
+- [ ] Saved prompts and preferences survive reopening. Cancel and Escape discard unsaved modal changes.
+- [ ] Settings has only Preferences and Prompts tabs; no provider, key, or model controls remain anywhere in the UI.
+- [ ] Install over a build that saved an API key (or seed one in clientStorage), launch, and confirm the stored settings no longer contain `apiKey`, `provider`, or `models`.
+- [ ] Preferences copy explains what is sent to the service, immediate application, and the icon image exception.
 - [ ] Rescan icon renders correctly in light and dark themes. Add, rename, and delete a component; rescan updates the inventory without duplicates.
 - [ ] Header layout remains usable after export removal. No CSV/JSON export action or modal is present.
 
-## Provider requests and images
+## Limits and payments
 
-Repeat for OpenAI, Anthropic, Google, and OpenRouter; mark unavailable accounts/models as blocked rather than passed. Calls may incur provider charges.
+- [ ] On first launch, the usage pill shows the current free or Pro usage; in development with no payments token it says Usage unavailable.
+- [ ] A successful description, icon-name generation, and variant generation each increment usage once; a failed request does not.
+- [ ] Seed a low free limit override and confirm the cap returns 402, shows the exact free-tier copy, and offers Upgrade to Pro in the row error area.
+- [ ] Confirm a Pro user sees the monthly count, reset date, and the cap message at the seeded monthly limit.
+- [ ] In development, use `figma.payments.setPaymentStatusInDevelopment({ type: 'PAID' })` and the checkout action; confirm the token and usage refresh after checkout.
+- [ ] Edit a Pro user's `period` to the previous month and confirm the next generation starts a new monthly count.
+- [ ] Force a Worker 401 and confirm the plugin refreshes its token and retries once; a second 401 is shown as an error.
+- [ ] Run the documented manual override and usage queries from `worker/README.md`; confirm the returned pill and cap reflect the override.
 
-- [ ] Save and validate a valid key, then generate a real description in This page and Entire file. Validation alone is not proof of generation access.
+## Generation service and images
+
+Run against the deployed Worker with the Gemini secret set. Calls incur Gemini charges on the publisher's key.
+
+- [ ] Generate a real description in This page and Entire file.
 - [ ] With images off and icon mode off, text-only generation succeeds.
-- [ ] With images on, generation succeeds for a component with distinctive visual content. Inspect the request in the developer tools if needed to confirm an image was attached; do not share keys or payloads.
+- [ ] With images on, generation succeeds for a component with distinctive visual content. Inspect the request in the developer tools if needed to confirm an image was attached.
 - [ ] With images off and icon mode on, an image is still attempted and the icon naming prompt is used.
-- [ ] Invalid keys and disconnected network produce readable errors, clear loading states, preserve existing descriptions, and allow retry.
-- [ ] Where practical, exercise quota and model-access errors and confirm recovery.
-
-- [ ] OpenRouter Validate checks the key without generation; test exhausted credits and confirm that an incomplete GLM response does not replace a description. The GLM default uses low reasoning effort; OpenRouter has a 4,096-token response budget. Other choices use their catalog capabilities or API defaults.
+- [ ] Disconnected network and a stopped or misconfigured Worker (secret removed) produce readable errors, clear loading states, preserve existing descriptions, and allow retry.
+- [ ] Run a batch large enough to hit the per-address rate limit (more than 60 requests in a minute). Rows wait and complete rather than failing; `npm run worker:tail` shows 429s followed by successes.
+- [ ] `npm run worker:tail` shows token counts per request and never prompt or description text.
+- [ ] A very long custom prompt or an oversized image returns the service's validation message without a crash.
 
 ## Descriptions, sets, and batches
 
@@ -73,26 +87,14 @@ Repeat for OpenAI, Anthropic, Google, and OpenRouter; mark unavailable accounts/
 ## Submission readiness
 
 - [ ] Review `community-listing.md` against the verified behavior and screenshots.
-- [x] Publisher approved `../PRIVACY.md`, effective September 4, 2026.
+- [ ] Publisher approves the revised `../PRIVACY.md` describing the publisher-managed service.
 - [ ] Publish the approved policy and verify its public URL while signed out.
 - [ ] Verify the public support URL while signed out. Do not include secrets or private designs in public issues.
 - [ ] Confirm publisher identity, account prerequisites, Figma-assigned plugin ID preserved in build configuration, and current submission form requirements.
 - [ ] Complete the form and verify In review separately from local QA. Published is a separate approval state.
 
-## Model selection
+## Settings details
 
-- [ ] Existing settings keep the four default models. OpenRouter is labeled as a provider.
-- [ ] Refresh model list for each provider; select a non-default, Save, reopen, and verify the selection survives. Repeat across providers to check choices remain separate.
-- [ ] Confirm a new/custom model ID appears in the outgoing request. Model browsing and Validate do not generate descriptions or transmit component content.
-- [ ] Browse a long catalog, choose a model, and verify dropdown and Save/Cancel remain usable.
-- [ ] Change provider or key while loading; stale responses must not replace the new provider's list. A failed catalog request leaves saved/default choices available.
-- [ ] Switch providers and check the previous provider's key is not reused for a different API service.
-- [ ] Choose an OpenRouter text-only model with images or icon mode enabled; generation should explain the incompatibility without sending the image.
-- [ ] Check custom models and reasoning-capable models on each endpoint; API-specific compatibility and access are not guaranteed by catalog presence.
-
-- [ ] API key field has a visible border before hover. Privacy tooltip opens on hover/focus and Escape dismisses it without closing Settings.
-- [ ] Reset Settings opens confirmation; Keep settings and Escape preserve settings. Confirming restores defaults and clears the saved key and icon overrides without changing component descriptions. Reopen the plugin to verify persistence.
-
-- [ ] Model Reset to default restores the current provider’s default only; Save persists it and Cancel discards it. Refresh model list is a left-aligned link directly beneath the dropdown.
+- [ ] Reset Settings opens confirmation; Keep settings and Escape preserve settings. Confirming restores default preferences, prompts, and icon overrides without changing component descriptions. Reopen the plugin to verify persistence.
 
 - [ ] Turn Show variants in list off: Fill/Replace counts exclude variants, generation changes only sets and standalone components, and Generate all descriptions is hidden. Turn it on: variants return to counts and generation.

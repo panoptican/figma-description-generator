@@ -13,6 +13,7 @@ const createComponent = (overrides: Partial<ComponentData> = {}): ComponentData 
   type: 'COMPONENT',
   properties: [],
   currentDescription: '',
+  pageId: 'page-1',
   pageName: 'Page 1',
   ...overrides
 })

@@ -10,6 +10,10 @@
     "build": "build-figma-plugin --typecheck --minify",
     "watch": "build-figma-plugin --typecheck --watch",
     "test": "vitest run",
+    "qa": "node scripts/qa-checklist.mjs",
+    "worker:dev": "wrangler dev --config worker/wrangler.jsonc",
+    "worker:deploy": "wrangler deploy --config worker/wrangler.jsonc",
+    "worker:tail": "wrangler tail --config worker/wrangler.jsonc",
     "test:watch": "vitest"
   },
   "dependencies": {
@@ -21,22 +25,24 @@
     "@create-figma-plugin/build": "^4.0.3",
     "@create-figma-plugin/tsconfig": "^3.2.0",
     "@figma/plugin-typings": "^1.98.0",
+    "@types/node": "^24.13.4",
     "typescript": "^5.3.3",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "wrangler": "^4.130.0"
   },
   "figma-plugin": {
     "documentAccess": "dynamic-page",
     "editorType": [
       "figma"
     ],
-    "id": "description-generator",
+    "id": "1678669904810665842",
     "name": "Description Generator",
+    "permissions": [
+      "payments"
+    ],
     "networkAccess": {
       "allowedDomains": [
-        "https://api.openai.com",
-        "https://api.anthropic.com",
-        "https://generativelanguage.googleapis.com",
-        "https://openrouter.ai"
+        "https://description-generator.spidleweb.workers.dev"
       ]
     },
     "menu": [

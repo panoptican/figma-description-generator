@@ -13,3 +13,4 @@ product-description/
 !.env.example
 .claude
 logs/
+.wrangler/
