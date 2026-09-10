@@ -250,13 +250,13 @@ function initPlugin(scope: Scope) {
     }
   })
 
-  on<GetPaymentTokenHandler>('GET_PAYMENT_TOKEN', async () => {
+  on<GetPaymentTokenHandler>('GET_PAYMENT_TOKEN', async (requestId) => {
     try {
       const payments = figma.payments
       const token = payments ? await payments.getPluginPaymentTokenAsync() : null
-      emit<PaymentTokenHandler>('PAYMENT_TOKEN', { token, status: payments?.status?.type ?? 'NOT_SUPPORTED' })
+      emit<PaymentTokenHandler>('PAYMENT_TOKEN', { requestId, token, status: payments?.status?.type ?? 'NOT_SUPPORTED' })
     } catch {
-      emit<PaymentTokenHandler>('PAYMENT_TOKEN', { token: null, status: figma.payments?.status?.type ?? 'NOT_SUPPORTED' })
+      emit<PaymentTokenHandler>('PAYMENT_TOKEN', { requestId, token: null, status: figma.payments?.status?.type ?? 'NOT_SUPPORTED' })
     }
   })
 

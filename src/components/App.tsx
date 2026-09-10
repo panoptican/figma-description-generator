@@ -10,10 +10,7 @@ import {
   DescriptionAppliedHandler,
   ExportImageHandler,
   ImageExportedHandler,
-  GetPaymentTokenHandler,
-  PaymentTokenHandler,
   StartCheckoutHandler,
-  CheckoutFinishedHandler,
   LoadComponentsHandler,
   LoadSettingsHandler,
   SaveSettingsHandler,
@@ -24,11 +21,7 @@ import {
   SelectComponentHandler
 } from '../types'
 import {
-  generateDescriptionWithUsage,
-  fetchUsage,
   QuotaExceededError,
-  TokenError,
-  Usage,
   DEFAULT_PROMPT,
   DEFAULT_VARIANT_PROMPT,
   DEFAULT_ICON_PROMPT
@@ -36,6 +29,7 @@ import {
 import { GenerationBatch, getComponentSetMembers, getGenerationBatches } from '../utils/generationBatches'
 import { isIconModeEnabled } from '../utils/icon'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { usePaymentSession } from '../hooks/usePaymentSession'
 import { Header } from './Header'
 import { SettingsModal } from './SettingsModal'
 import { ComponentList } from './ComponentList'
@@ -64,8 +58,6 @@ export function App({ scope, currentPageName }: AppProps) {
   const [generatedThisSession, setGeneratedThisSession] = useState<Set<string>>(new Set())
   const [generateProgress, setGenerateProgress] = useState({ current: 0, total: 0 })
   const [rowErrors, setRowErrors] = useState<Record<string, string | undefined>>({})
-  const [usage, setUsage] = useState<Usage | null>(null)
-  const [paymentStatus, setPaymentStatus] = useState<'UNPAID' | 'PAID' | 'NOT_SUPPORTED'>('NOT_SUPPORTED')
   const [headerNotice, setHeaderNotice] = useState<string | null>(null)
   const [errorResetVersion, setErrorResetVersion] = useState(0)
   const [iconOverrides, setIconOverrides] = useState<Record<string, boolean>>({})
@@ -74,9 +66,11 @@ export function App({ scope, currentPageName }: AppProps) {
   // BUG-001 fix: Map of resolvers keyed by component ID instead of single ref
   const imageExportResolvers = useRef<Map<string, (value: string | null) => void>>(new Map())
   const searchInputRef = useRef<HTMLInputElement | null>(null)
-  const paymentTokenRef = useRef<{ token: string | null; fetchedAt: number }>({ token: null, fetchedAt: 0 })
-  const paymentTokenRequestRef = useRef<Promise<string> | null>(null)
-  const paymentTokenResolverRef = useRef<((token: string) => void) | null>(null)
+  const { session: payments, usageState } = usePaymentSession(() => {
+    setHeaderNotice(null)
+    setRowErrors({})
+    setErrorResetVersion(version => version + 1)
+  })
   const CONCURRENCY_LIMIT = 3
 
   // Helper to export component image and wait for result
@@ -85,22 +79,6 @@ export function App({ scope, currentPageName }: AppProps) {
       imageExportResolvers.current.set(componentId, resolve)
       emit<ExportImageHandler>('EXPORT_IMAGE', { id: componentId })
     })
-  }, [])
-
-  const requestPaymentToken = useCallback((force = false): Promise<string> => {
-    const cached = paymentTokenRef.current
-    if (!force && cached.token && Date.now() - cached.fetchedAt < 5 * 60 * 1000) {
-      return Promise.resolve(cached.token)
-    }
-    if (paymentTokenRequestRef.current) return paymentTokenRequestRef.current
-    paymentTokenRequestRef.current = new Promise<string>((resolve) => {
-      paymentTokenResolverRef.current = resolve
-      emit<GetPaymentTokenHandler>('GET_PAYMENT_TOKEN')
-    }).finally(() => {
-      paymentTokenRequestRef.current = null
-      paymentTokenResolverRef.current = null
-    })
-    return paymentTokenRequestRef.current!
   }, [])
 
   // Load initial data and the current Figma payment identity.
@@ -159,33 +137,8 @@ export function App({ scope, currentPageName }: AppProps) {
       }
     )
 
-    const unsubscribePaymentToken = on<PaymentTokenHandler>('PAYMENT_TOKEN', ({ token, status }) => {
-      paymentTokenRef.current = { token, fetchedAt: Date.now() }
-      setPaymentStatus(status)
-      paymentTokenResolverRef.current?.(token || '')
-      if (token) {
-        fetchUsage(token).then(setUsage).catch((error) => {
-          if (!(error instanceof TokenError)) console.error('Could not load usage:', error)
-        })
-      } else {
-        setUsage(null)
-      }
-    })
-
-    const unsubscribeCheckout = on<CheckoutFinishedHandler>('CHECKOUT_FINISHED', ({ status }) => {
-      setPaymentStatus(status)
-      setHeaderNotice(null)
-      setRowErrors({})
-      setErrorResetVersion((version) => version + 1)
-      void requestPaymentToken(true).then((token) => {
-        if (token) return fetchUsage(token).then(setUsage)
-        setUsage(null)
-      }).catch((error) => console.error('Could not refresh usage after checkout:', error))
-    })
-
     emit<LoadSettingsHandler>('LOAD_SETTINGS')
     emit<LoadComponentsHandler>('LOAD_COMPONENTS')
-    emit<GetPaymentTokenHandler>('GET_PAYMENT_TOKEN')
 
     return () => {
       unsubscribeComponents()
@@ -193,10 +146,8 @@ export function App({ scope, currentPageName }: AppProps) {
       unsubscribeSettingsSaved()
       unsubscribeDescriptionApplied()
       unsubscribeImageExported()
-      unsubscribePaymentToken()
-      unsubscribeCheckout()
     }
-  }, [requestPaymentToken])
+  }, [])
 
   const handleRefreshComponents = useCallback(() => {
     if (isRefreshing || isGeneratingAll) {
@@ -281,20 +232,11 @@ export function App({ scope, currentPageName }: AppProps) {
         variantContext: component.variantContext,
         abortSignal
       }
-      let token = await requestPaymentToken()
-      let result
-      try {
-        result = await generateDescriptionWithUsage({ ...input, paymentToken: token })
-      } catch (error) {
-        if (!(error instanceof TokenError)) throw error
-        token = await requestPaymentToken(true)
-        result = await generateDescriptionWithUsage({ ...input, paymentToken: token })
-      }
-      setUsage(result.usage)
+      const description = await payments.generate(input)
       setHeaderNotice(null)
-      return result.description
+      return description
     },
-    [settings, exportComponentImage, iconOverrides, requestPaymentToken]
+    [settings, exportComponentImage, iconOverrides, payments]
   )
 
   const handleDisableIcon = useCallback((componentId: string) => {
@@ -581,8 +523,7 @@ export function App({ scope, currentPageName }: AppProps) {
         progress={generateProgress}
         generateCount={generateCount}
         searchInputRef={searchInputRef}
-        usage={usage}
-        paymentStatus={paymentStatus}
+        usageState={usageState}
         notice={headerNotice}
         onUpgrade={handleUpgrade}
       />

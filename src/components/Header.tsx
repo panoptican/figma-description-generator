@@ -2,8 +2,7 @@ import { Button } from '@create-figma-plugin/ui'
 import { h, Ref } from 'preact'
 
 import { getShortcutLabel } from '../hooks/useKeyboardShortcuts'
-import { Usage } from '../services/ai'
-import { PaymentStatus } from '../types'
+import { UsageState } from '../services/paymentSession'
 
 interface HeaderProps {
   searchValue: string
@@ -21,8 +20,7 @@ interface HeaderProps {
   progress: { current: number; total: number }
   generateCount: number
   searchInputRef?: Ref<HTMLInputElement>
-  usage: Usage | null
-  paymentStatus: PaymentStatus
+  usageState: UsageState
   notice?: string | null
   onUpgrade: () => void
 }
@@ -43,8 +41,7 @@ export function Header({
   progress,
   generateCount,
   searchInputRef,
-  usage,
-  paymentStatus,
+  usageState,
   notice,
   onUpgrade
 }: HeaderProps) {
@@ -74,18 +71,17 @@ export function Header({
     </svg>
   )
 
+  const usage = usageState.status === 'ready' ? usageState.usage : null
   const usageLabel = usage
     ? usage.plan === 'free'
       ? `${usage.used.toLocaleString('en-US')} / ${usage.limit.toLocaleString('en-US')} free`
       : `${usage.used.toLocaleString('en-US')} / ${usage.limit.toLocaleString('en-US')} this month`
-    : paymentStatus === 'NOT_SUPPORTED'
-      ? 'Usage unavailable'
-      : 'Loading usage…'
+    : usageState.status === 'loading' ? 'Loading usage…' : 'Usage unavailable'
   const usageTitle = usage?.plan === 'pro' && usage.resetsAt
     ? `Pro: ${usage.used.toLocaleString('en-US')} of ${usage.limit.toLocaleString('en-US')} descriptions used this month. Resets ${new Date(usage.resetsAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' })}.`
     : usage?.plan === 'free'
       ? `Free: ${usage.used.toLocaleString('en-US')} of ${usage.limit.toLocaleString('en-US')} lifetime descriptions used.`
-      : 'Usage is unavailable until Figma provides a payments token.'
+      : usageState.status === 'error' || usageState.status === 'unavailable' ? usageState.message : 'Loading current usage.'
   const canUpgrade = usage?.plan === 'free'
 
   const RefreshIcon = () => (

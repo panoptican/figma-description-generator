@@ -216,8 +216,8 @@ describe('dynamic page access', () => {
       getPluginPaymentTokenAsync: vi.fn().mockResolvedValue('payment-token')
     }
     currentPage()
-    await handlers.get('GET_PAYMENT_TOKEN')!()
-    expect(emit).toHaveBeenCalledWith('PAYMENT_TOKEN', { token: 'payment-token', status: 'UNPAID' })
+    await handlers.get('GET_PAYMENT_TOKEN')!(7)
+    expect(emit).toHaveBeenCalledWith('PAYMENT_TOKEN', { requestId: 7, token: 'payment-token', status: 'UNPAID' })
   })
 
   it('emits a null payment token when Figma payment lookup throws', async () => {
@@ -226,8 +226,8 @@ describe('dynamic page access', () => {
       getPluginPaymentTokenAsync: vi.fn().mockRejectedValue(new Error('Unavailable'))
     }
     currentPage()
-    await handlers.get('GET_PAYMENT_TOKEN')!()
-    expect(emit).toHaveBeenCalledWith('PAYMENT_TOKEN', { token: null, status: 'NOT_SUPPORTED' })
+    await handlers.get('GET_PAYMENT_TOKEN')!(7)
+    expect(emit).toHaveBeenCalledWith('PAYMENT_TOKEN', { requestId: 7, token: null, status: 'NOT_SUPPORTED' })
   })
 
   it('always finishes the checkout event when checkout throws', async () => {
@@ -238,6 +238,25 @@ describe('dynamic page access', () => {
     currentPage()
     await handlers.get('START_CHECKOUT')!()
     expect(emit).toHaveBeenCalledWith('CHECKOUT_FINISHED', { status: 'UNPAID' })
+  })
+
+  it('preserves request IDs when payment token lookups finish out of order', async () => {
+    let finishOld!: (token: string) => void
+    api.payments = {
+      status: { type: 'PAID' },
+      getPluginPaymentTokenAsync: vi.fn()
+        .mockImplementationOnce(() => new Promise<string>(resolve => { finishOld = resolve }))
+        .mockResolvedValueOnce('new-token'),
+    }
+    currentPage()
+    const old = handlers.get('GET_PAYMENT_TOKEN')!(1)
+    await handlers.get('GET_PAYMENT_TOKEN')!(2)
+    finishOld('old-token')
+    await old
+    expect(emit.mock.calls.filter(call => call[0] === 'PAYMENT_TOKEN')).toEqual([
+      ['PAYMENT_TOKEN', { requestId: 2, token: 'new-token', status: 'PAID' }],
+      ['PAYMENT_TOKEN', { requestId: 1, token: 'old-token', status: 'PAID' }],
+    ])
   })
 })
 

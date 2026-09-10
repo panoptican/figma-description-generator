@@ -95,12 +95,12 @@ export interface ImageExportedHandler extends EventHandler {
 
 export interface GetPaymentTokenHandler extends EventHandler {
   name: 'GET_PAYMENT_TOKEN'
-  handler: () => void
+  handler: (requestId: number) => void
 }
 
 export interface PaymentTokenHandler extends EventHandler {
   name: 'PAYMENT_TOKEN'
-  handler: (data: { token: string | null; status: PaymentStatus }) => void
+  handler: (data: { requestId: number; token: string | null; status: PaymentStatus }) => void
 }
 
 export interface StartCheckoutHandler extends EventHandler {
