@@ -17,8 +17,12 @@ interface CachedIdentity {
 }
 
 interface PaymentResponse {
-  user_id?: string
-  payment_status?: { type?: string; status?: string }
+  status?: number
+  error?: boolean
+  meta?: {
+    user_id?: string
+    payment_status?: { type?: string; status?: string }
+  }
 }
 
 function nowSeconds(now: number | Date): number {
@@ -87,13 +91,18 @@ export async function resolveIdentity(token: string, env: IdentityEnv, now: numb
   if (response.status >= 400 && response.status < 500) return { error: 'invalid_token' }
   if (response.status >= 500 || !response.ok) return { error: 'figma_unavailable' }
 
-  let payment: PaymentResponse
+  let body: PaymentResponse | null
   try {
-    payment = await response.json() as PaymentResponse
+    body = await response.json() as PaymentResponse | null
   } catch {
     return { error: 'figma_unavailable' }
   }
-  if (!payment.user_id) return { error: 'figma_unavailable' }
+  // The REST API wraps PaymentInformation in meta, unlike the plugin Payments API.
+  const payment = body?.meta
+  if (body?.error !== false || body.status !== 200 || typeof payment?.user_id !== 'string' || !payment.user_id.trim()) {
+    console.error(JSON.stringify({ event: 'figma_identity_error', reason: 'invalid_response' }))
+    return { error: 'figma_unavailable' }
+  }
   const paymentStatus = payment.payment_status?.type || payment.payment_status?.status
   if (paymentStatus !== 'PAID' && paymentStatus !== 'TRIAL' && paymentStatus !== 'UNPAID') return { error: 'figma_unavailable' }
   const plan: Plan = paymentStatus === 'PAID' || paymentStatus === 'TRIAL' ? 'pro' : 'free'

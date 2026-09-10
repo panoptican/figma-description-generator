@@ -24,6 +24,29 @@ function geminiResponse(data: unknown, status = 200) {
 }
 
 describe('generation service', () => {
+  it('reads usage and generates through the real Figma payment response envelope', async () => {
+    const liveShapeEnv = { DB: createTestDatabase(), FIGMA_TOKEN: 'publisher-token', GEMINI_API_KEY: 'secret' }
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(geminiResponse({ status: 200, error: false, meta: {
+        user_id: 'envelope-user', resource_id: '1678669904810665842', resource_type: 'PLUGIN',
+        payment_status: { status: 'UNPAID' },
+      } }))
+      .mockResolvedValueOnce(geminiResponse({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Displays an action.' }] } }] }))
+    vi.stubGlobal('fetch', fetch)
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const usage = await worker.fetch(new Request('https://service.test/usage', {
+      method: 'POST', body: JSON.stringify({ paymentToken: 'figma-session-token' }),
+    }), liveShapeEnv)
+    expect(usage.status).toBe(200)
+    expect(await usage.json()).toMatchObject({ usage: { plan: 'free', used: 0, limit: 1000 } })
+    const generated = await worker.fetch(post({ prompt: 'Describe Button', paymentToken: 'figma-session-token' }), liveShapeEnv)
+    expect(generated.status).toBe(200)
+    expect(await generated.json()).toMatchObject({ description: 'Displays an action.', usage: { used: 1 } })
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(fetch.mock.calls[0][0]).toContain('api.figma.com/v1/payments?')
+    expect(fetch.mock.calls[1][0]).toContain('generativelanguage.googleapis.com/')
+  })
+
   it('answers preflight with permissive CORS for the null plugin origin', async () => {
     const response = await worker.fetch(new Request('https://service.test/generate', { method: 'OPTIONS' }), env)
     expect(response.status).toBe(204)
