@@ -4,7 +4,7 @@
 
 This project uses the Ralph Wiggum autonomous development framework.
 
-**Constitution:** `.specify/memory/constitution.md`
+**Optional local constitution:** `.specify/memory/constitution.md`, if present. Agent tooling folders are ignored and are not included in a fresh clone.
 
 ### Quick Start
 

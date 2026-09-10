@@ -6,7 +6,7 @@ Based on Geoffrey Huntley's Ralph Wiggum methodology.
 
 ## Phase 0: Orient
 
-Read `.specify/memory/constitution.md` to understand project principles and constraints.
+If present, read `.specify/memory/constitution.md` for local project principles and constraints.
 
 ---
 

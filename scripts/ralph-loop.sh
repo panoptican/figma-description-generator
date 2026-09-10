@@ -285,7 +285,7 @@ Based on Geoffrey Huntley's Ralph Wiggum methodology.
 
 ## Phase 0: Orient
 
-Read `.specify/memory/constitution.md` to understand project principles and constraints.
+If present, read `.specify/memory/constitution.md` for local project principles and constraints.
 
 ---
 BUILDEOF
@@ -429,7 +429,7 @@ Only use this when you want a detailed breakdown of specs into smaller tasks.
 
 ## Phase 0: Orient
 
-0a. Read `.specify/memory/constitution.md` for project principles.
+0a. If present, read `.specify/memory/constitution.md` for local project principles.
 
 0b. Study `specs/` to learn all feature specifications.
 
