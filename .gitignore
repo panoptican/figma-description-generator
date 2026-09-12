@@ -13,5 +13,9 @@ product-description/
 .env.*
 !.env.example
 .claude
+specs/
+AGENTS.md
+CLAUDE.md
 logs/
 .wrangler/
+marketing/
